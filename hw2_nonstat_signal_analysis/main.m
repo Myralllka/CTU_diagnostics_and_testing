@@ -54,14 +54,14 @@ title("STFT, window size 256, Ndft samples 256")
 % Hilbert-Huang transform
 subplot(3, 2, 5);
 imf = emd(y);
-hht(imf,'FrequencyLimits',[0 pi]);
+hht(imf,'FrequencyLimits',[0 0.3]);
 
 % Hilbert-Huang transform in 3D
 subplot(3, 2, 6);
 imf = emd(y, "Display", 1);
-[hs,f,t] = hht(imf, 'FrequencyLimits',[0 pi]);
+[hs,f,t] = hht(imf, 'FrequencyLimits',[0 0.3]);
 mesh(seconds(t),f,hs,'EdgeColor','none','FaceColor','interp')
-title("aP")
+title("Hilbert spectrum 3D")
 xlabel('Time (s)')
 ylabel('Frequency (Hz)')
 zlabel('Instantaneous Energy')
