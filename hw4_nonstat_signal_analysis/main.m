@@ -19,7 +19,7 @@ t = t_beg : 1/f_sampling : t_end - 1/f_sampling;
 
 f_chirp_beg = 2;
 f_chirp_end = 300;
-x = chirp(t, f_chirp_beg, f_sampling/10, f_chirp_end);
+x = chirp(t, f_chirp_beg, t_end, f_chirp_end, "logarithmic");
 
 % fs_mod = 5;
 A = gausswin(length(x)); % amplifier
@@ -54,12 +54,12 @@ title("STFT, window size 256, Ndft samples 256")
 % Hilbert-Huang transform
 subplot(3, 2, 5);
 imf = emd(y);
-hht(imf,'FrequencyLimits',[0 0.3]);
+hht(imf, f_sampling);
 
 % Hilbert-Huang transform in 3D
 subplot(3, 2, 6);
 imf = emd(y, "Display", 1);
-[hs,f,t] = hht(imf, 'FrequencyLimits',[0 0.3]);
+[hs,f,t] = hht(imf, f_sampling);
 mesh(seconds(t),f,hs,'EdgeColor','none','FaceColor','interp')
 title("Hilbert spectrum 3D")
 xlabel('Time (s)')
