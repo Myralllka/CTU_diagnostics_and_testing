@@ -29,24 +29,56 @@
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import copy
+from Field import AnchorsField, Anchor
 
 mpl.use('Qt5Agg')
 
-anchor_names = [0x46, 0x4b, 0x45, 0x4c, 0x48, 0x4a, 0x47, 0x49, 0x44]
-anchor_names = list(map(lambda x: int(x), anchor_names))
-print(anchor_names)
-anchors_coors = np.array([[-12.77, -12.77, -12.75, -6.77, -6.86, -6.87, -1.81, -1.92, -1.97],  # X coors
-                          [2.75, -2.67, -8.05, 2.75, -2.67, -8.05, 2.75, -2.67, -8.05],  # Y coors
-                          [3.13, 3.13, 3.13, 2.86, 2.86, 2.86, 2.6, 2.6, 2.6]])  # Z coors
 
-c = 299792458  # m/s
+def init_field(main_N: int):
+    # Assume only 9 specific anchors
+    anchor_names = [0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c]
+
+    anchors_coors = np.array([[-1.97, -12.75, -12.77, -1.81, -6.86, -1.92, -6.87, -12.27, -6.77],
+                              [-8.05, -8.05, 2.75, 2.75, -2.67, -2.67, -8.05, -2.67, 2.75],
+                              [2.6, 2.6, 3.13, 3.13, 2.86, 2.86, 2.6, 2.86, 3.13]])
+    anchors_unit_coors = [[2, 2, 0, 0, 1, 1, 2, 1, 0],
+                          [2, 0, 0, 2, 1, 2, 1, 0, 1]]
+    ancs = []
+
+    for i in range(9):
+        ancs.append(Anchor(anchor_names[i],
+                           i,
+                           anchors_coors[:, i],
+                           (anchors_unit_coors[0][i], anchors_unit_coors[1][i]),
+                           False))
+
+    main_anc = Anchor(anchor_names[main_N],
+                      main_N,
+                      anchors_coors[:, main_N],
+                      (anchors_unit_coors[0][main_N], anchors_unit_coors[1][main_N]),
+                      True)
+    return AnchorsField(main_anc, ancs, anchors_coors)
+
+
+def u2us(inp):
+    """
+    Transform the DWM1000 time units to microseconds.
+    To have all time in microseconds (as for )
+    :param inp: DWM time units
+    :return: microseconds
+    """
+    return inp / (499.2 * 128.0)
+
 
 fname_syncs = "syncs_walls5.csv"
 fname_blinks = "blinks_walls5.csv"
 
+# Data preprocessing: read files
 syncs = np.genfromtxt(fname_syncs, delimiter=',')
 blinks = np.genfromtxt(fname_blinks, delimiter=',')
 
+# remove repeating lines, sort with respect to the UNIX time
 new_array = [tuple(row) for row in blinks]
 blinks = np.unique(new_array, axis=0)
 blinks = blinks[blinks[:, 3].argsort()]
@@ -55,26 +87,32 @@ new_array = [tuple(row) for row in syncs]
 syncs = np.unique(new_array, axis=0)
 syncs = syncs[syncs[:, 4].argsort()]
 
-if __name__ == "__main__":
-    blinks_5 = blinks[blinks[:, 0] == 5]
-    blinks_30 = blinks[blinks[:, 0] == 30]
-    blinks_30 = blinks_30[blinks_30[:, 3].argsort()]
+# make a starting time unit in sync file as time 0
+initial_time = syncs[0, 4]
+syncs[:, 4] -= initial_time
+blinks[:, 3] -= initial_time
 
-    N = 100
-    blinks_30_70 = blinks_30[blinks_30[:, 1] == 72]
-    a=0
-    p = blinks[:, 3]
-    print(np.min(p) - np.min(syncs[:, 4]))
-    print(p[0] - syncs[0, 4])
-    # print(np.max(p) - np.max(syncs[:, 4]))
-    plt.plot(p, '.')
-    plt.plot(syncs[:, 4], '.')
-    plt.show()
-    # for ()
-# fig = plt.figure()
-# ax = fig.add_subplot(projection='3d')
-# ax.scatter(blinks_30[:, 3], blinks_30[:, 2], blinks_30[:, 1])
-# ax.set_xlabel('ts_rx')
-# ax.set_ylabel('ts_tx')
-# ax.set_zlabel('addr_rx')
-# plt.show()
+# Normalize: make all time units to be in us
+syncs[:, 2] = u2us(syncs[:, 2])
+syncs[:, 3] = u2us(syncs[:, 3])
+blinks[:, 2] = u2us(blinks[:, 2])
+
+syncs[:, 4] *= 1000
+blinks[:, 3] *= 1000
+
+if __name__ == "__main__":
+    F = init_field(4)
+    print(F)
+    last_i = syncs.shape[0]
+    for i in range(last_i):
+        F.update_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3])
+        anchors_active_idxs = [el is not None for el in F.time_corrections]
+        # if len([el is None for el in F.time_corrections]):
+        #     continue
+        print(F.time_corrections)
+
+# a = u2ms(syncs[:, 3])
+# a = 1
+# blinks_5 = blinks[blinks[:, 0] == 5]
+# blinks_30 = blinks[blinks[:, 0] == 30]
+# blinks_30 = blinks_30[blinks_30[:, 3].argsort()]
