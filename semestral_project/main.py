@@ -30,7 +30,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import copy
-from Field import AnchorsField, Anchor
+from Field import AnchorsField, Anchor, u2ms
 
 mpl.use('Qt5Agg')
 
@@ -61,55 +61,65 @@ def init_field(main_N: int):
     return AnchorsField(main_anc, ancs, anchors_coors)
 
 
-def u2us(inp):
-    """
-    Transform the DWM1000 time units to microseconds.
-    To have all time in microseconds (as for )
-    :param inp: DWM time units
-    :return: microseconds
-    """
-    return inp / (499.2 * 128.0)
-
-
-fname_syncs = "syncs_walls5.csv"
-fname_blinks = "blinks_walls5.csv"
-
-# Data preprocessing: read files
-syncs = np.genfromtxt(fname_syncs, delimiter=',')
-blinks = np.genfromtxt(fname_blinks, delimiter=',')
-
-# remove repeating lines, sort with respect to the UNIX time
-new_array = [tuple(row) for row in blinks]
-blinks = np.unique(new_array, axis=0)
-blinks = blinks[blinks[:, 3].argsort()]
-
-new_array = [tuple(row) for row in syncs]
-syncs = np.unique(new_array, axis=0)
-syncs = syncs[syncs[:, 4].argsort()]
-
-# make a starting time unit in sync file as time 0
-initial_time = syncs[0, 4]
-syncs[:, 4] -= initial_time
-blinks[:, 3] -= initial_time
-
-# Normalize: make all time units to be in us
-syncs[:, 2] = u2us(syncs[:, 2])
-syncs[:, 3] = u2us(syncs[:, 3])
-blinks[:, 2] = u2us(blinks[:, 2])
-
-syncs[:, 4] *= 1000
-blinks[:, 3] *= 1000
-
 if __name__ == "__main__":
+
+    fname_syncs = "syncs_walls5.csv"
+    fname_blinks = "blinks_walls5.csv"
+
+    # Data preprocessing: read files
+    syncs = np.genfromtxt(fname_syncs, delimiter=',', dtype=np.float64)
+    blinks = np.genfromtxt(fname_blinks, delimiter=',', dtype=np.float64)
+
+    # remove repeating lines, sort with respect to the UNIX time
+    new_array = [tuple(row) for row in blinks]
+    blinks = np.unique(new_array, axis=0)
+    blinks = blinks[blinks[:, 3].argsort()]
+
+    new_array = [tuple(row) for row in syncs]
+    syncs = np.unique(new_array, axis=0)
+    syncs = syncs[syncs[:, 4].argsort()]
+
+    # plt.plot(syncs[:, 4], syncs[:, 2], 'r.')
+    # plt.plot(syncs[:, 4], syncs[:, 3], 'y.')
+    # plt.plot(blinks[:, 3], blinks[:, 2], 'g.')
+    # plt.show()
+
+    # make a starting time unit in sync file as time 0
+    syncs[:, 4] *= 1000
+    blinks[:, 3] *= 1000
+
+    initial_time = syncs[0, 4]
+    syncs[:, 4] -= initial_time
+    blinks[:, 3] -= initial_time
+
+    # Normalize: make all time units to be in us
+    syncs[:, 2] = u2ms(syncs[:, 2])
+    syncs[:, 3] = u2ms(syncs[:, 3])
+    blinks[:, 2] = u2ms(blinks[:, 2])
+
+    # # # # # # # # # # # # # # #
+    # # # # # main part # # # # #
+    # # # # # # # # # # # # # # #
+
     F = init_field(4)
-    print(F)
+
+    # For beginning let's ignore other nodes than 30
+    node_name = 30
+
     last_i = syncs.shape[0]
+    blinks_counter = 0
     for i in range(last_i):
-        F.update_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3])
-        anchors_active_idxs = [el is not None for el in F.time_corrections]
+        F.update_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3], syncs[i, 4])
+        anchors_active_idxs = [el is not None for el in F.l_time_corr]
+        #
+        while blinks[blinks_counter + 1, 3] <= syncs[i, 4]:
+            if blinks[blinks_counter, 0] == node_name:
+                pass
+            blinks_counter += 1
+
         # if len([el is None for el in F.time_corrections]):
         #     continue
-        print(F.time_corrections)
+        print(F.l_time_corr)
 
 # a = u2ms(syncs[:, 3])
 # a = 1

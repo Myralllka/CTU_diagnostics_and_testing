@@ -3,8 +3,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 c = 299792458  # m/s
-
 c_us = 299.792458  # m/us
+c_ns = 0.299792458  # m/ns
+
+
+def u2ms(inp):
+    """
+    Transform the DWM1000 time units to microseconds.
+    To have all time in microseconds (as for )
+    :param inp: DWM time units
+    :return: microseconds
+    """
+    return inp / (499.2 * 128.0)
 
 
 class Anchor:
@@ -27,10 +37,13 @@ class AnchorsField:
         self.ancs = copy.deepcopy(other_ancs)
         self.coors = coors  # for plotting only!
 
-        # Time is corrected with respect to the main anchor
+        # Time is corrected with respect to the main anchor. To find any time in a main time domain - add the el from
+        # this file
         self.TOF_table = None
-        self.time_corrections = [None for _ in range(len(other_ancs))]
-        self.time_corrections[main_anc.number] = 0
+        self.l_time_corr = [None for _ in range(len(other_ancs))]
+        #
+        self.time_sync = -np.inf
+        self.l_time_corr[main_anc.number] = 0
 
         self.init_TOF2main()
         self.TOF_table: np.array
@@ -71,7 +84,16 @@ class AnchorsField:
         ax.set_zlabel('z, [m]')
         plt.show()
 
-    def update_corrections(self, n_from, n_to, t1, t2):
+    def update_corrections(self, n_from, n_to, t1, t2, t_abs):
+        """
+
+        :param n_from: node number of a tx
+        :param n_to: node number of a rx
+        :param t1: RTC time in ms
+        :param t2: RTC time in ms
+        :param t_abs: absolute time in ms
+        :return:
+        """
         n_from = self.anchor_names[n_from]
         n_to = self.anchor_names[n_to]
 
@@ -79,20 +101,21 @@ class AnchorsField:
         if n_from == self.main_anc.number:
             t_ideal = t1 + self.TOF_table[n_from, n_to]
             correction = t_ideal - t2
-            self.time_corrections[n_to] = correction
+            self.l_time_corr[n_to] = correction
+            self.time_sync = t_abs - t1 + self.TOF_table[n_from, n_to]
         elif n_to == self.main_anc.number:
             t_ideal = t2 - self.TOF_table[n_from, n_to]
             correction = t_ideal - t1
-            self.time_corrections[n_from] = correction
-        elif self.time_corrections[n_from] is not None:
-            t_ideal = t1 + self.time_corrections[n_from] + self.TOF_table[n_from, n_to]
+            self.l_time_corr[n_from] = correction
+            self.time_sync = t_abs - t2
+        elif self.l_time_corr[n_from] is not None:
+            t_ideal = t1 + self.l_time_corr[n_from] + self.TOF_table[n_from, n_to]
             correction = t_ideal - t2
-            self.time_corrections[n_to] = correction
-        elif self.time_corrections[n_to] is not None:
-            t_ideal = t2 + self.time_corrections[n_to] - self.TOF_table[n_from, n_to]
+            self.l_time_corr[n_to] = correction
+        elif self.l_time_corr[n_to] is not None:
+            t_ideal = t2 + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
             correction = t_ideal - t1
-            self.time_corrections[n_from] = correction
-
+            self.l_time_corr[n_from] = correction
 
     def get_tof(self, n_from, n_to):
         if n_from == self.main_anc.number:
