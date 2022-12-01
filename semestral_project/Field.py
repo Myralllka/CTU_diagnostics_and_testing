@@ -1,6 +1,7 @@
 import copy
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.optimize as opt
 
 c = 299792458  # m/s
 c_us = 299.792458  # m/us
@@ -15,6 +16,16 @@ def u2ms(inp):
     :return: microseconds
     """
     return inp / (499.2 * 128.0)
+
+
+def u2us(inp):
+    """
+    Transform the DWM1000 time units to microseconds.
+    To have all time in microseconds (as for )
+    :param inp: DWM time units
+    :return: microseconds
+    """
+    return inp / (499.2 * 128.0 * 1e3)
 
 
 class Anchor:
@@ -40,7 +51,7 @@ class AnchorsField:
         # Time is corrected with respect to the main anchor. To find any time in a main time domain - add the el from
         # this file
         self.TOF_table = None
-        self.l_time_corr = [None for _ in range(len(other_ancs))]
+        self.l_time_corr = np.array([None for _ in range(len(other_ancs))])
         #
         self.time_sync = -np.inf
         self.l_time_corr[main_anc.number] = 0
@@ -82,16 +93,16 @@ class AnchorsField:
         ax.set_xlabel('x, [m]')
         ax.set_ylabel('y, [m]')
         ax.set_zlabel('z, [m]')
-        plt.show()
+        # plt.show()
+        return ax
 
-    def update_corrections(self, n_from, n_to, t1, t2, t_abs):
+    def update_corrections(self, n_from, n_to, t1, t2):
         """
 
         :param n_from: node number of a tx
         :param n_to: node number of a rx
         :param t1: RTC time in ms
         :param t2: RTC time in ms
-        :param t_abs: absolute time in ms
         :return:
         """
         n_from = self.anchor_names[n_from]
@@ -102,12 +113,10 @@ class AnchorsField:
             t_ideal = t1 + self.TOF_table[n_from, n_to]
             correction = t_ideal - t2
             self.l_time_corr[n_to] = correction
-            self.time_sync = t_abs - t1 + self.TOF_table[n_from, n_to]
         elif n_to == self.main_anc.number:
             t_ideal = t2 - self.TOF_table[n_from, n_to]
             correction = t_ideal - t1
             self.l_time_corr[n_from] = correction
-            self.time_sync = t_abs - t2
         elif self.l_time_corr[n_from] is not None:
             t_ideal = t1 + self.l_time_corr[n_from] + self.TOF_table[n_from, n_to]
             correction = t_ideal - t2
@@ -117,10 +126,80 @@ class AnchorsField:
             correction = t_ideal - t1
             self.l_time_corr[n_from] = correction
 
-    def get_tof(self, n_from, n_to):
-        if n_from == self.main_anc.number:
-            pass
-        elif n_to == self.main_anc.number:
-            pass
-        else:
-            raise Exception("Sorry, not yet implemented ger_tof for {} and {}".format(n_from, n_to))
+    def locate_tag(self, tag_n: int, idxs: np.array, times: np.array):
+        """
+
+        :param tag_n: number of a tag to locate
+        :param idxs: sorted idxs of anchors
+        :param times: time when each anchor received the message from the moving tag
+        :return:
+        """
+        # Look for x, y, z coordinates of a moving tag.
+        idxs = [self.anchor_names[arg] for arg in idxs]
+        # if not (self.main_anc.number in idxs):
+        #     print("There is no main anchor in dataset. Feature is not supported yet.")
+        #     return
+
+        # extract anchors coordinates
+        x_s = self.coors[0, idxs]
+        y_s = self.coors[1, idxs]
+        z_s = self.coors[2, idxs]
+
+        # d = c * delta_t
+        t = times.copy() + self.l_time_corr[idxs].copy()
+        t = t.reshape(t.shape[0], 1)
+        t_m = t @ np.ones(t.shape).T
+        d_m = t_m - t_m.T
+        d_m *= c_us
+
+        bounds = [(-14, -10, 0), (0, 3, 6)]
+        # initial guess - mean of inp
+        x_in, y_in, z_in = np.mean(x_s), np.mean(y_s), np.mean(z_s)
+        F = functions(x_s, y_s, z_s, d_m)
+        J = jacobian(x_s, y_s, z_s, d_m)
+
+        x = opt.least_squares(F, x0=np.array([x_in, y_in, z_in]), jac=J, bounds=bounds, method='dogbox')
+
+        return x.x
+
+
+def functions(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
+    """ Given anchors at Xs[i], Ys[i], Zs[i] and TDoA between observers d01, d02, d12, this closure
+        returns a function that evaluates the system of N hyperbolas for given x, y, z.
+    """
+
+    def fn(args):
+        x, y, z = args
+        res = []
+        for i in range(Xs.shape[0]):
+            for j in range(i + 1, Xs.shape[0]):
+                res.append(np.sqrt((x - Xs[j]) ** 2 + (y - Ys[j]) ** 2 + (z - Zs[j]) ** 2) -
+                           np.sqrt((x - Xs[i]) ** 2 + (y - Ys[i]) ** 2 + (z - Zs[i]) ** 2) -
+                           Ds[i, j])
+
+        return res
+
+    return fn
+
+
+def jacobian(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
+    """
+    Collection of the partial derivatives of each function with respect to each independent variable.
+    """
+
+    def fn(args):
+        x, y, z = args
+        res = []
+        for i in range(Xs.shape[0]):
+            for j in range(i + 1, Xs.shape[0]):
+                nom = np.sqrt((x - Xs[j]) ** 2 + (y - Ys[j]) ** 2 + (z - Zs[j]) ** 2)
+                den = np.sqrt((x - Xs[i]) ** 2 + (y - Ys[i]) ** 2 + (z - Zs[i]) ** 2)
+
+                adx = (x - Xs[j]) / nom - (x - Xs[i]) / den
+                ady = (y - Ys[j]) / nom - (y - Ys[i]) / den
+                adz = (z - Zs[j]) / nom - (z - Zs[i]) / den
+
+                res.append([adx, ady, adz])
+        return res
+
+    return fn

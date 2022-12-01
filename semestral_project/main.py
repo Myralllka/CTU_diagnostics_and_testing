@@ -104,25 +104,55 @@ if __name__ == "__main__":
     F = init_field(4)
 
     # For beginning let's ignore other nodes than 30
-    node_name = 30
+    node_name = 5
 
     last_i = syncs.shape[0]
-    blinks_counter = 0
-    for i in range(last_i):
-        F.update_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3], syncs[i, 4])
+    blinks_counter, i = 0, 0
+    blinks_recorded = False
+    target_located = False
+    res = []
+    while True:
+        F.update_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3])
         anchors_active_idxs = [el is not None for el in F.l_time_corr]
-        #
-        while blinks[blinks_counter + 1, 3] <= syncs[i, 4]:
+        anchs_txs_rxs = []
+        while blinks[blinks_counter, 3] <= syncs[i, 4]:
             if blinks[blinks_counter, 0] == node_name:
-                pass
+                anchs_txs_rxs.append([int(blinks[blinks_counter, 1]),
+                                      float(blinks[blinks_counter, 2]),
+                                      float(blinks[blinks_counter, 3]),
+                                      int(blinks[blinks_counter, 4])])
+                blinks_recorded = True
             blinks_counter += 1
+            if blinks_counter + 1 == blinks.shape[0]:
+                break
+        # If there were some "blinks" recorded - process them.
+        if blinks_recorded:
+            blinks_recorded = False
+            if len(anchs_txs_rxs) < 4:
+                print("Unable to locate the tag because at least 4 anchors are needed for that in 3D")
+            else:
+                anchs_txs_rxs = np.array(anchs_txs_rxs)
+                a = np.all((anchs_txs_rxs[:, 3]) == anchs_txs_rxs[0, 3])
+                assert a, "sth went wrong: messages ids is not the same"
+                # Normalise the time: in case when messages with the same idx were sent in a different time
+                mean = np.mean(anchs_txs_rxs[:, 2])
+                e = anchs_txs_rxs[:, 2] - mean
+                anchs_txs_rxs[:, 1] -= e
+                # Sort with respect to the anchor name because it is expected by solver
+                anchs_txs_rxs = (anchs_txs_rxs[anchs_txs_rxs[:, 0].argsort()])[:, 0:3]
 
-        # if len([el is None for el in F.time_corrections]):
-        #     continue
-        print(F.l_time_corr)
+                x = F.locate_tag(blinks[blinks_counter, 0], anchs_txs_rxs[:, 0], anchs_txs_rxs[:, 1])
+                if not x is None:
+                    res.append([x[0], x[1], x[2], blinks[blinks_counter, 0]])
 
-# a = u2ms(syncs[:, 3])
-# a = 1
-# blinks_5 = blinks[blinks[:, 0] == 5]
-# blinks_30 = blinks[blinks[:, 0] == 30]
-# blinks_30 = blinks_30[blinks_30[:, 3].argsort()]
+        # increment counters and check for terminate conditions
+        i += 1
+        if (i == last_i) or (blinks_counter + 1 == blinks.shape[0]):
+            break
+
+    ax = F.plot()
+    res = np.array(res).T
+    res = res[0:3, res[-1] == 30]
+    ax.plot(res[0, :], res[1, :], res[2, :])
+
+    plt.show()
