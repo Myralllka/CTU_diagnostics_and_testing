@@ -2,7 +2,7 @@ clc;
 clear all;
 syms x y z xi yi zi xj yj zj v dij;
 
-eq = abs(sqrt((x-xj)^2 + (y-yj)^2 + (z-zj)^2) - sqrt((x-xi)^2 + (y-yi)^2 + (z-zi)^2)) - v*dij;
+eq = abs(sqrt((x-xj)^2 + (y-zyj)^2 + (z-zj)^2) - sqrt((x-xi)^2 + (y-yi)^2 + (z-zi)^2)) - v*dij;
 % diff(eq, x)
 simplify(diff(eq, x))
 % diff(eq, y)
