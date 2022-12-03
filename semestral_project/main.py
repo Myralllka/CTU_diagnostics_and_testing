@@ -30,7 +30,8 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import copy
-from Field import AnchorsField, Anchor, u2ms
+from scipy import stats
+from Field import AnchorsField, Anchor
 
 mpl.use('Qt5Agg')
 
@@ -63,8 +64,10 @@ def init_field(main_N: int):
 
 if __name__ == "__main__":
 
-    fname_syncs = "syncs_walls5.csv"
-    fname_blinks = "blinks_walls5.csv"
+    # fname_syncs = "syncs_walls5.csv"
+    # fname_blinks = "blinks_walls5.csv"
+    fname_syncs = "syncs_cold_start.csv"
+    fname_blinks = "blinks_cold_start.csv"
 
     # Data preprocessing: read files
     syncs = np.genfromtxt(fname_syncs, delimiter=',', dtype=np.float64)
@@ -79,11 +82,6 @@ if __name__ == "__main__":
     syncs = np.unique(new_array, axis=0)
     syncs = syncs[syncs[:, 4].argsort()]
 
-    # plt.plot(syncs[:, 4], syncs[:, 2], 'r.')
-    # plt.plot(syncs[:, 4], syncs[:, 3], 'y.')
-    # plt.plot(blinks[:, 3], blinks[:, 2], 'g.')
-    # plt.show()
-
     # make a starting time unit in sync file as time 0
     syncs[:, 4] *= 1000
     blinks[:, 3] *= 1000
@@ -93,9 +91,9 @@ if __name__ == "__main__":
     blinks[:, 3] -= initial_time
 
     # Normalize: make all time units to be in us
-    syncs[:, 2] = u2ms(syncs[:, 2])
-    syncs[:, 3] = u2ms(syncs[:, 3])
-    blinks[:, 2] = u2ms(blinks[:, 2])
+    # syncs[:, 2] = u2ms(syncs[:, 2])
+    # syncs[:, 3] = u2ms(syncs[:, 3])
+    # blinks[:, 2] = u2ms(blinks[:, 2])
 
     # # # # # # # # # # # # # # #
     # # # # # main part # # # # #
@@ -129,30 +127,34 @@ if __name__ == "__main__":
         if blinks_recorded:
             blinks_recorded = False
             if len(anchs_txs_rxs) < 4:
+                # TODO: Idea: use (stats.mode(abc)) and find with respect to it
                 print("Unable to locate the tag because at least 4 anchors are needed for that in 3D")
             else:
                 anchs_txs_rxs = np.array(anchs_txs_rxs)
                 a = np.all((anchs_txs_rxs[:, 3]) == anchs_txs_rxs[0, 3])
-                assert a, "sth went wrong: messages ids is not the same"
-                # Normalise the time: in case when messages with the same idx were sent in a different time
-                mean = np.mean(anchs_txs_rxs[:, 2])
-                e = anchs_txs_rxs[:, 2] - mean
-                anchs_txs_rxs[:, 1] -= e
-                # Sort with respect to the anchor name because it is expected by solver
-                anchs_txs_rxs = (anchs_txs_rxs[anchs_txs_rxs[:, 0].argsort()])[:, 0:3]
-
-                x = F.locate_tag(blinks[blinks_counter, 0], anchs_txs_rxs[:, 0], anchs_txs_rxs[:, 1])
-                if not x is None:
-                    res.append([x[0], x[1], x[2], blinks[blinks_counter, 0]])
+                b = np.all((anchs_txs_rxs[:, 2]) == anchs_txs_rxs[0, 2])
+                assert a, "messages ids are not the same"
+                if b:
+                    anchs_txs_rxs = (anchs_txs_rxs[anchs_txs_rxs[:, 0].argsort()])[:, 0:3]
+                    x = F.locate_tag(anchs_txs_rxs[:, 0], anchs_txs_rxs[:, 1])
+                    if x is not None:
+                        res.append([x[0], x[1], x[2], blinks[blinks_counter, 0]])
+                else:
+                    print("time stamps of msg sent by tag are different: ignoring...")
 
         # increment counters and check for terminate conditions
         i += 1
         if (i == last_i) or (blinks_counter + 1 == blinks.shape[0]):
             break
 
+        if blinks_counter >= 800:
+            break
+
     ax = F.plot()
     res = np.array(res).T
-    res = res[0:3, res[-1] == 30]
-    ax.plot(res[0, :], res[1, :], res[2, :])
+    res1 = res[0:3, res[-1] == 5]
+    ax.plot(res1[0, :], res1[1, :], res1[2, :], 'y')
+    res2 = res[0:3, res[-1] == 30]
+    ax.plot(res2[0, :], res2[1, :], res2[2, :], 'b')
 
     plt.show()

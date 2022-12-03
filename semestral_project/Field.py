@@ -4,8 +4,10 @@ import matplotlib.pyplot as plt
 import scipy.optimize as opt
 
 c = 299792458  # m/s
-c_us = 299.792458  # m/us
-c_ns = 0.299792458  # m/ns
+# c_us = 299.792458  # m/us
+# c_ns = 0.299792458  # m/ns
+dw = 1 / (499.2 * 128.0 * 1e6)  # s
+c_dw = c * dw  # m/dw = 0.00469176397 m/dw
 
 
 def u2ms(inp):
@@ -66,25 +68,8 @@ class AnchorsField:
 
         for i in range(len(self.ancs)):
             for j in range(len(self.ancs)):
-                res[i, j] = np.linalg.norm(self.ancs[i].coordinates_m - self.ancs[j].coordinates_m) / c_us
+                res[i, j] = np.linalg.norm(self.ancs[i].coordinates_m - self.ancs[j].coordinates_m) / c_dw
         self.TOF_table = res
-
-    def __str__(self):
-        res_arr = [[None for _ in range(3)] for __ in range(3)]
-        cds = self.main_anc.coordinates_unit
-        res_arr[cds[0]][cds[1]] = self.main_anc.__str__()
-        for anc in self.ancs:
-            anc: Anchor
-            cds = anc.coordinates_unit
-            res_arr[cds[0]][cds[1]] = anc.__str__()
-        res = ""
-        for r in res_arr:
-            r: list
-            for e in r:
-                e: Anchor
-                res += "{}\t\t".format(e.__str__())
-            res += "\n"
-        return res
 
     def plot(self):
         fig = plt.figure()
@@ -93,7 +78,6 @@ class AnchorsField:
         ax.set_xlabel('x, [m]')
         ax.set_ylabel('y, [m]')
         ax.set_zlabel('z, [m]')
-        # plt.show()
         return ax
 
     def update_corrections(self, n_from, n_to, t1, t2):
@@ -126,19 +110,15 @@ class AnchorsField:
             correction = t_ideal - t1
             self.l_time_corr[n_from] = correction
 
-    def locate_tag(self, tag_n: int, idxs: np.array, times: np.array):
+    def locate_tag(self, idxs: np.array, times: np.array):
         """
 
-        :param tag_n: number of a tag to locate
         :param idxs: sorted idxs of anchors
         :param times: time when each anchor received the message from the moving tag
         :return:
         """
         # Look for x, y, z coordinates of a moving tag.
         idxs = [self.anchor_names[arg] for arg in idxs]
-        # if not (self.main_anc.number in idxs):
-        #     print("There is no main anchor in dataset. Feature is not supported yet.")
-        #     return
 
         # extract anchors coordinates
         x_s = self.coors[0, idxs]
@@ -146,26 +126,49 @@ class AnchorsField:
         z_s = self.coors[2, idxs]
 
         # d = c * delta_t
-        t = times.copy() + self.l_time_corr[idxs].copy()
+        t_c = times.copy() + self.l_time_corr[idxs].copy()
+        t = times.copy()
         t = t.reshape(t.shape[0], 1)
         t_m = t @ np.ones(t.shape).T
-        d_m = t_m - t_m.T
-        d_m *= c_us
+        d_m = np.abs(t_m - t_m.T)
+        d_m = d_m * c_dw
 
-        bounds = [(-14, -10, 0), (0, 3, 6)]
-        # initial guess - mean of inp
-        x_in, y_in, z_in = np.mean(x_s), np.mean(y_s), np.mean(z_s)
+        t_c = t_c.reshape(t_c.shape[0], 1)
+        t_m_c = t_c @ np.ones(t_c.shape).T
+        d_m_c = np.abs(t_m_c - t_m_c.T)
+        d_m_c = d_m * c_dw
+
+        bounds = [(-18, -13, -2),
+                  (6, 5, 5)]
+        # initial guess - center of mass of used anchors
+        x_in, y_in, z_in = np.mean(x_s), np.mean(y_s), np.mean(z_s) / 2
         F = functions(x_s, y_s, z_s, d_m)
         J = jacobian(x_s, y_s, z_s, d_m)
 
-        x = opt.least_squares(F, x0=np.array([x_in, y_in, z_in]), jac=J, bounds=bounds, method='dogbox')
+        # x = opt.least_squares(F, x0=np.array([x_in, y_in, z_in]), jac=J, bounds=bounds, method='dogbox')
+        x = opt.least_squares(F,
+                              x0=np.array([x_in, y_in, z_in]),
+                              jac=J,
+                              # bounds=bounds,
+                              loss="soft_l1",
+                              method='dogbox'
+                              # tr_solver="exact"
+                              )
 
-        return x.x
+        res_coors = x.x
+        # if (
+        #         (res_coors[0] < bounds[0][0] * 2) or (res_coors[0] > bounds[1][0] * 2) or
+        #         (res_coors[1] < bounds[0][1] * 2) or (res_coors[1] > bounds[1][1] * 2) or
+        #         (res_coors[2] < bounds[0][2] * 2) or (res_coors[2] > bounds[1][2] * 2)
+        # ):
+        #     return None
+        return res_coors
 
 
 def functions(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
-    """ Given anchors at Xs[i], Ys[i], Zs[i] and TDoA between observers d01, d02, d12, this closure
-        returns a function that evaluates the system of N hyperbolas for given x, y, z.
+    """
+    Given anchors at Xs[i], Ys[i], Zs[i] and TDoA between observers, this
+    returns a function that evaluates the system of N hyperbolas for given x, y, z.
     """
 
     def fn(args):
@@ -173,9 +176,10 @@ def functions(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
         res = []
         for i in range(Xs.shape[0]):
             for j in range(i + 1, Xs.shape[0]):
-                res.append(np.sqrt((x - Xs[j]) ** 2 + (y - Ys[j]) ** 2 + (z - Zs[j]) ** 2) -
-                           np.sqrt((x - Xs[i]) ** 2 + (y - Ys[i]) ** 2 + (z - Zs[i]) ** 2) -
-                           Ds[i, j])
+                res.append(
+                        np.abs(np.linalg.norm(np.array([x, y, z]) - np.array([Xs[j], Ys[j], Zs[j]])) -
+                               np.linalg.norm(np.array([x, y, z]) - np.array([Xs[i], Ys[i], Zs[i]]))) -
+                        Ds[j, i])
 
         return res
 
@@ -192,12 +196,14 @@ def jacobian(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
         res = []
         for i in range(Xs.shape[0]):
             for j in range(i + 1, Xs.shape[0]):
-                nom = np.sqrt((x - Xs[j]) ** 2 + (y - Ys[j]) ** 2 + (z - Zs[j]) ** 2)
-                den = np.sqrt((x - Xs[i]) ** 2 + (y - Ys[i]) ** 2 + (z - Zs[i]) ** 2)
+                sq_i = np.sqrt(np.power(x - Xs[i], 2.) + np.power(y - Ys[i], 2.) + np.power(z - Zs[i], 2.))
+                sq_j = np.sqrt(np.power(x - Xs[j], 2.) + np.power(y - Ys[j], 2.) + np.power(z - Zs[j], 2.))
 
-                adx = (x - Xs[j]) / nom - (x - Xs[i]) / den
-                ady = (y - Ys[j]) / nom - (y - Ys[i]) / den
-                adz = (z - Zs[j]) / nom - (z - Zs[i]) / den
+                common = (sq_j - sq_i) / np.abs(sq_j - sq_i)
+
+                adx = ((x - Xs[j]) / sq_j - (x - Xs[i]) / sq_i) * common
+                ady = ((y - Ys[j]) / sq_j - (y - Ys[i]) / sq_i) * common
+                adz = ((z - Zs[j]) / sq_j - (z - Zs[i]) / sq_i) * common
 
                 res.append([adx, ady, adz])
         return res
