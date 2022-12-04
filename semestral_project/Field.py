@@ -10,26 +10,6 @@ dw = 1 / (499.2 * 128.0 * 1e6)  # s
 c_dw = c * dw  # m/dw = 0.00469176397 m/dw
 
 
-def u2ms(inp):
-    """
-    Transform the DWM1000 time units to microseconds.
-    To have all time in microseconds (as for )
-    :param inp: DWM time units
-    :return: microseconds
-    """
-    return inp / (499.2 * 128.0)
-
-
-def u2us(inp):
-    """
-    Transform the DWM1000 time units to microseconds.
-    To have all time in microseconds (as for )
-    :param inp: DWM time units
-    :return: microseconds
-    """
-    return inp / (499.2 * 128.0 * 1e3)
-
-
 class Anchor:
     def __init__(self, name: int, number: int, coordinates: np.array, coordinates_unit: tuple, is_main: bool):
         self.is_main = is_main
@@ -95,20 +75,39 @@ class AnchorsField:
         # To correct any time, it is needed to ADD the corespondent t_error to received time
         if n_from == self.main_anc.number:
             t_ideal = t1 + self.TOF_table[n_from, n_to]
-            correction = t_ideal - t2
+            correction = t2 - t_ideal
             self.l_time_corr[n_to] = correction
         elif n_to == self.main_anc.number:
             t_ideal = t2 - self.TOF_table[n_from, n_to]
-            correction = t_ideal - t1
+            correction = t1 - t_ideal
             self.l_time_corr[n_from] = correction
-        elif self.l_time_corr[n_from] is not None:
+        # elif ((self.l_time_corr[n_from] is not None) and
+        #       (self.l_time_corr[n_to] is not None)):
+        #     t_ideal_rx = t1 + self.l_time_corr[n_from] - self.l_time_corr[n_to] + self.TOF_table[n_from, n_to]
+        #     t_ideal_tx = t1 - self.l_time_corr[n_from] + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
+        #     correction_tx = t_ideal_tx - t2
+        #     correction_rx = t_ideal_rx - t1
+        #     self.l_time_corr[n_from] = correction_tx
+        #     self.l_time_corr[n_to] = correction_rx
+        #
+
+        elif ((self.l_time_corr[n_from] is not None) and
+              (self.l_time_corr[n_to]) is None):
             t_ideal = t1 + self.l_time_corr[n_from] + self.TOF_table[n_from, n_to]
-            correction = t_ideal - t2
+            correction = t2 - t_ideal
             self.l_time_corr[n_to] = correction
-        elif self.l_time_corr[n_to] is not None:
+
+        elif ((self.l_time_corr[n_to] is not None) and
+              (self.l_time_corr[n_from] is None)):
             t_ideal = t2 + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
-            correction = t_ideal - t1
+            correction = t1 - t_ideal
             self.l_time_corr[n_from] = correction
+        elif ((self.l_time_corr[n_from] is not None) and
+              (self.l_time_corr[n_to] is not None)):
+            t_ideal = t2 + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
+            correction = t1 - t_ideal
+            self.l_time_corr[n_from] = correction
+            pass
 
     def locate_tag(self, idxs: np.array, times: np.array):
         """
@@ -124,24 +123,19 @@ class AnchorsField:
         x_s = self.coors[0, idxs]
         y_s = self.coors[1, idxs]
         z_s = self.coors[2, idxs]
+        # initial guess - center of mass of used anchors
+        x_in, y_in, z_in = np.mean(x_s), np.mean(y_s), np.mean(z_s) / 2
 
         # d = c * delta_t
-        t_c = times.copy() + self.l_time_corr[idxs].copy()
-        t = times.copy()
+        t = times.copy() + self.l_time_corr[idxs].copy()
         t = t.reshape(t.shape[0], 1)
         t_m = t @ np.ones(t.shape).T
         d_m = np.abs(t_m - t_m.T)
         d_m = d_m * c_dw
 
-        t_c = t_c.reshape(t_c.shape[0], 1)
-        t_m_c = t_c @ np.ones(t_c.shape).T
-        d_m_c = np.abs(t_m_c - t_m_c.T)
-        d_m_c = d_m * c_dw
-
         bounds = [(-18, -13, -2),
                   (6, 5, 5)]
-        # initial guess - center of mass of used anchors
-        x_in, y_in, z_in = np.mean(x_s), np.mean(y_s), np.mean(z_s) / 2
+
         F = functions(x_s, y_s, z_s, d_m)
         J = jacobian(x_s, y_s, z_s, d_m)
 
@@ -151,15 +145,16 @@ class AnchorsField:
                               jac=J,
                               # bounds=bounds,
                               loss="soft_l1",
-                              method='dogbox'
-                              # tr_solver="exact"
+                              method='dogbox',
+                              tr_solver="exact"
                               )
 
         res_coors = x.x
+        N = 10
         # if (
-        #         (res_coors[0] < bounds[0][0] * 2) or (res_coors[0] > bounds[1][0] * 2) or
-        #         (res_coors[1] < bounds[0][1] * 2) or (res_coors[1] > bounds[1][1] * 2) or
-        #         (res_coors[2] < bounds[0][2] * 2) or (res_coors[2] > bounds[1][2] * 2)
+        #         (res_coors[0] < bounds[0][0] * N) or (res_coors[0] > bounds[1][0] * N) or
+        #         (res_coors[1] < bounds[0][1] * N) or (res_coors[1] > bounds[1][1] * N) or
+        #         (res_coors[2] < bounds[0][2] * N) or (res_coors[2] > bounds[1][2] * N)
         # ):
         #     return None
         return res_coors
@@ -176,10 +171,8 @@ def functions(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
         res = []
         for i in range(Xs.shape[0]):
             for j in range(i + 1, Xs.shape[0]):
-                res.append(
-                        np.abs(np.linalg.norm(np.array([x, y, z]) - np.array([Xs[j], Ys[j], Zs[j]])) -
-                               np.linalg.norm(np.array([x, y, z]) - np.array([Xs[i], Ys[i], Zs[i]]))) -
-                        Ds[j, i])
+                res.append(np.abs(np.linalg.norm(np.array([x, y, z]) - np.array([Xs[j], Ys[j], Zs[j]])) -
+                                  np.linalg.norm(np.array([x, y, z]) - np.array([Xs[i], Ys[i], Zs[i]]))) - Ds[i, j])
 
         return res
 

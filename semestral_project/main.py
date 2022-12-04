@@ -102,31 +102,36 @@ if __name__ == "__main__":
     F = init_field(4)
 
     # For beginning let's ignore other nodes than 30
-    node_name = 5
 
     last_i = syncs.shape[0]
     blinks_counter, i = 0, 0
     blinks_recorded = False
     target_located = False
+    update_corrections = True
     res = []
     while True:
         F.update_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3])
-        anchors_active_idxs = [el is not None for el in F.l_time_corr]
+        n_active_ancs = [el is not None for el in F.l_time_corr]
+        if not np.all(n_active_ancs):
+            i += 1
+            if (i == last_i) or (blinks_counter + 1 == blinks.shape[0]):
+                break
+            continue
         anchs_txs_rxs = []
         while blinks[blinks_counter, 3] <= syncs[i, 4]:
-            if blinks[blinks_counter, 0] == node_name:
-                anchs_txs_rxs.append([int(blinks[blinks_counter, 1]),
-                                      float(blinks[blinks_counter, 2]),
-                                      float(blinks[blinks_counter, 3]),
-                                      int(blinks[blinks_counter, 4])])
-                blinks_recorded = True
+            anchs_txs_rxs.append([int(blinks[blinks_counter, 1]),
+                                  float(blinks[blinks_counter, 2]),
+                                  float(blinks[blinks_counter, 3]),
+                                  int(blinks[blinks_counter, 4]),
+                                  int(blinks[blinks_counter, 0])])
+            blinks_recorded = True
             blinks_counter += 1
             if blinks_counter + 1 == blinks.shape[0]:
                 break
         # If there were some "blinks" recorded - process them.
         if blinks_recorded:
             blinks_recorded = False
-            if len(anchs_txs_rxs) < 4:
+            if len(anchs_txs_rxs) < 3:
                 # TODO: Idea: use (stats.mode(abc)) and find with respect to it
                 print("Unable to locate the tag because at least 4 anchors are needed for that in 3D")
             else:
@@ -135,10 +140,10 @@ if __name__ == "__main__":
                 b = np.all((anchs_txs_rxs[:, 2]) == anchs_txs_rxs[0, 2])
                 assert a, "messages ids are not the same"
                 if b:
-                    anchs_txs_rxs = (anchs_txs_rxs[anchs_txs_rxs[:, 0].argsort()])[:, 0:3]
+                    anchs_txs_rxs = (anchs_txs_rxs[anchs_txs_rxs[:, 0].argsort()])
                     x = F.locate_tag(anchs_txs_rxs[:, 0], anchs_txs_rxs[:, 1])
                     if x is not None:
-                        res.append([x[0], x[1], x[2], blinks[blinks_counter, 0]])
+                        res.append([x[0], x[1], x[2], anchs_txs_rxs[0][4]])
                 else:
                     print("time stamps of msg sent by tag are different: ignoring...")
 
@@ -151,10 +156,13 @@ if __name__ == "__main__":
             break
 
     ax = F.plot()
+    # ax.set_autoscale_on(False)
     res = np.array(res).T
-    res1 = res[0:3, res[-1] == 5]
-    ax.plot(res1[0, :], res1[1, :], res1[2, :], 'y')
-    res2 = res[0:3, res[-1] == 30]
-    ax.plot(res2[0, :], res2[1, :], res2[2, :], 'b')
-
-    plt.show()
+    if res.size == 0:
+        print("nothing happened: anchors were not synchronized")
+    else:
+        res1 = res[0:3, res[-1] == 5]
+        ax.plot(res1[0, :], res1[1, :], res1[2, :], 'y')
+        res2 = res[0:3, res[-1] == 30]
+        ax.plot(res2[0, :], res2[1, :], res2[2, :], 'b')
+        plt.show()
