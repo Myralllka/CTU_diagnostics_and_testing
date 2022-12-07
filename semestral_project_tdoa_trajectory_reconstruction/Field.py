@@ -4,10 +4,16 @@ import matplotlib.pyplot as plt
 import scipy.optimize as opt
 
 c = 299792458  # m/s
-# c_us = 299.792458  # m/us
+c_us = 299.792458  # m/us
+
+
 # c_ns = 0.299792458  # m/ns
-dw = 1 / (499.2 * 128.0 * 1e6)  # s
-c_dw = c * dw  # m/dw = 0.00469176397 m/dw
+# dw = 1 / (499.2 * 128.0 * 1e6)  # s
+# c_dw = c * dw  # m/dw = 0.00469176397 m/dw
+
+
+def dw2us(t):
+    return t / (499.2 * 128)
 
 
 class Anchor:
@@ -24,8 +30,8 @@ class Anchor:
 
 class AnchorsField:
     # Assumed that there are only 9 anchors
-    def __init__(self, main_anc: Anchor, other_ancs: list[Anchor], coors: np.array):
-        self.anchor_names = {0x44: 0, 0x45: 1, 0x46: 2, 0x47: 3, 0x48: 4, 0x49: 5, 0x4a: 6, 0x4b: 7, 0x4c: 8}
+    def __init__(self, main_anc: Anchor, other_ancs: list[Anchor], coors: np.array, names):
+        self.anchor_names = names
         self.main_anc = copy.deepcopy(main_anc)
         self.ancs = copy.deepcopy(other_ancs)
         self.coors = coors  # for plotting only!
@@ -48,7 +54,7 @@ class AnchorsField:
 
         for i in range(len(self.ancs)):
             for j in range(len(self.ancs)):
-                res[i, j] = np.linalg.norm(self.ancs[i].coordinates_m - self.ancs[j].coordinates_m) / c_dw
+                res[i, j] = np.linalg.norm(self.ancs[i].coordinates_m - self.ancs[j].coordinates_m) / c_us
         self.TOF_table = res
 
     def plot(self):
@@ -76,44 +82,36 @@ class AnchorsField:
         if n_from == self.main_anc.number:
             t_ideal = t1 + self.TOF_table[n_from, n_to]
             correction = t2 - t_ideal
-            self.l_time_corr[n_to] = correction
+            self.l_time_corr[n_to] = correction - self.TOF_table[n_from, n_to]
         elif n_to == self.main_anc.number:
             t_ideal = t2 - self.TOF_table[n_from, n_to]
             correction = t1 - t_ideal
-            self.l_time_corr[n_from] = correction
-        # elif ((self.l_time_corr[n_from] is not None) and
-        #       (self.l_time_corr[n_to] is not None)):
-        #     t_ideal_rx = t1 + self.l_time_corr[n_from] - self.l_time_corr[n_to] + self.TOF_table[n_from, n_to]
-        #     t_ideal_tx = t1 - self.l_time_corr[n_from] + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
-        #     correction_tx = t_ideal_tx - t2
-        #     correction_rx = t_ideal_rx - t1
-        #     self.l_time_corr[n_from] = correction_tx
-        #     self.l_time_corr[n_to] = correction_rx
-        #
-
+            self.l_time_corr[n_from] = correction + self.TOF_table[n_from, n_to]
         elif ((self.l_time_corr[n_from] is not None) and
               (self.l_time_corr[n_to]) is None):
             t_ideal = t1 + self.l_time_corr[n_from] + self.TOF_table[n_from, n_to]
             correction = t2 - t_ideal
-            self.l_time_corr[n_to] = correction
-
+            self.l_time_corr[n_to] = correction - self.TOF_table[n_from, n_to]
         elif ((self.l_time_corr[n_to] is not None) and
               (self.l_time_corr[n_from] is None)):
             t_ideal = t2 + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
             correction = t1 - t_ideal
-            self.l_time_corr[n_from] = correction
+            self.l_time_corr[n_from] = correction + self.TOF_table[n_from, n_to]
         elif ((self.l_time_corr[n_from] is not None) and
               (self.l_time_corr[n_to] is not None)):
-            t_ideal = t2 + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
-            correction = t1 - t_ideal
-            self.l_time_corr[n_from] = correction
-            pass
+            t_ideal_from = t2 + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
+            t_ideal_to = t1 - self.l_time_corr[n_from] + self.TOF_table[n_from, n_to]
+            correction_from = t1 - t_ideal_from + self.TOF_table[n_from, n_to]
+            correction_to = t2 - t_ideal_to - self.TOF_table[n_from, n_to]
+            self.l_time_corr[n_from] = correction_from
+            self.l_time_corr[n_to] = correction_to
 
-    def locate_tag(self, idxs: np.array, times: np.array):
+    def locate_tag(self, idxs: np.array, times: np.array, x_prev: np.array, speed=c_us):
         """
 
         :param idxs: sorted idxs of anchors
         :param times: time when each anchor received the message from the moving tag
+        :param speed: speed of traveling
         :return:
         """
         # Look for x, y, z coordinates of a moving tag.
@@ -123,15 +121,14 @@ class AnchorsField:
         x_s = self.coors[0, idxs]
         y_s = self.coors[1, idxs]
         z_s = self.coors[2, idxs]
-        # initial guess - center of mass of used anchors
-        x_in, y_in, z_in = np.mean(x_s), np.mean(y_s), np.mean(z_s) / 2
 
         # d = c * delta_t
         t = times.copy() + self.l_time_corr[idxs].copy()
+        # t = times.copy()
         t = t.reshape(t.shape[0], 1)
         t_m = t @ np.ones(t.shape).T
         d_m = np.abs(t_m - t_m.T)
-        d_m = d_m * c_dw
+        d_m = d_m * speed
 
         bounds = [(-18, -13, -2),
                   (6, 5, 5)]
@@ -139,24 +136,16 @@ class AnchorsField:
         F = functions(x_s, y_s, z_s, d_m)
         J = jacobian(x_s, y_s, z_s, d_m)
 
-        # x = opt.least_squares(F, x0=np.array([x_in, y_in, z_in]), jac=J, bounds=bounds, method='dogbox')
         x = opt.least_squares(F,
-                              x0=np.array([x_in, y_in, z_in]),
+                              x0=x_prev,
                               jac=J,
                               # bounds=bounds,
                               loss="soft_l1",
-                              method='dogbox',
-                              tr_solver="exact"
+                              # method='dogbox',
+                              # tr_solver="exact"
                               )
 
         res_coors = x.x
-        N = 10
-        # if (
-        #         (res_coors[0] < bounds[0][0] * N) or (res_coors[0] > bounds[1][0] * N) or
-        #         (res_coors[1] < bounds[0][1] * N) or (res_coors[1] > bounds[1][1] * N) or
-        #         (res_coors[2] < bounds[0][2] * N) or (res_coors[2] > bounds[1][2] * N)
-        # ):
-        #     return None
         return res_coors
 
 
