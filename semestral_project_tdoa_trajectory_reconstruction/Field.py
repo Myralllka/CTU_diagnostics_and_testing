@@ -6,14 +6,17 @@ import scipy.optimize as opt
 c = 299792458  # m/s
 c_us = 299.792458  # m/us
 
-
 # c_ns = 0.299792458  # m/ns
-# dw = 1 / (499.2 * 128.0 * 1e6)  # s
-# c_dw = c * dw  # m/dw = 0.00469176397 m/dw
+dw = 1 / (499.2 * 128.0 * 1e6)  # s
+c_dw = c * dw  # m/dw = 0.00469176397 m/dw
 
 
 def dw2us(t):
-    return t / (499.2 * 128)
+    return t / (499.2 * 128.0)
+
+
+def dw2s(t):
+    return t / (499.2 * 128.0 * 1e6)
 
 
 class Anchor:
@@ -39,23 +42,29 @@ class AnchorsField:
         # Time is corrected with respect to the main anchor. To find any time in a main time domain - add the el from
         # this file
         self.TOF_table = None
+        self.TOF_dist = None
         self.l_time_corr = np.array([None for _ in range(len(other_ancs))])
         #
+        self.prev_update = [-np.inf for _ in range(9)]
         self.time_sync = -np.inf
         self.l_time_corr[main_anc.number] = 0
 
-        self.init_TOF2main()
+        # TODO: specify speed!
+        self.init_TOF2main(c_dw)
         self.TOF_table: np.array
+        self.TOF_dist: np.array
 
-    def init_TOF2main(self):
+    def init_TOF2main(self, speed):
         self.main_anc: Anchor
         self.ancs: list[Anchor]
         res = np.zeros((len(self.ancs), len(self.ancs)))
 
         for i in range(len(self.ancs)):
             for j in range(len(self.ancs)):
-                res[i, j] = np.linalg.norm(self.ancs[i].coordinates_m - self.ancs[j].coordinates_m) / c_us
-        self.TOF_table = res
+                res[i, j] = np.linalg.norm(self.ancs[i].coordinates_m - self.ancs[j].coordinates_m)
+        self.TOF_dist = res
+        self.TOF_table = np.round(res / speed)
+        # self.TOF_table = res / speed
 
     def plot(self):
         fig = plt.figure()
@@ -66,13 +75,14 @@ class AnchorsField:
         ax.set_zlabel('z, [m]')
         return ax
 
-    def update_corrections(self, n_from, n_to, t1, t2):
+    def update_corrections(self, n_from, n_to, t_from, t_to, abs_t):
         """
 
+        :param abs_t:
         :param n_from: node number of a tx
         :param n_to: node number of a rx
-        :param t1: RTC time in ms
-        :param t2: RTC time in ms
+        :param t_from: RTC time in ms
+        :param t_to: RTC time in ms
         :return:
         """
         n_from = self.anchor_names[n_from]
@@ -80,35 +90,54 @@ class AnchorsField:
 
         # To correct any time, it is needed to ADD the corespondent t_error to received time
         if n_from == self.main_anc.number:
-            t_ideal = t1 + self.TOF_table[n_from, n_to]
-            correction = t2 - t_ideal
-            self.l_time_corr[n_to] = correction - self.TOF_table[n_from, n_to]
+            t_ideal = t_from + self.TOF_table[n_from, n_to]
+            correction = t_ideal - t_to
+            self.upd_time_corr(n_to, correction, abs_t)
+            self.prev_update[n_to] = abs_t
         elif n_to == self.main_anc.number:
-            t_ideal = t2 - self.TOF_table[n_from, n_to]
-            correction = t1 - t_ideal
-            self.l_time_corr[n_from] = correction + self.TOF_table[n_from, n_to]
+            t_ideal = t_to - self.TOF_table[n_from, n_to]
+            correction = t_ideal - t_from
+            self.upd_time_corr(n_from, correction, abs_t)
+            self.prev_update[n_from] = abs_t
         elif ((self.l_time_corr[n_from] is not None) and
               (self.l_time_corr[n_to]) is None):
-            t_ideal = t1 + self.l_time_corr[n_from] + self.TOF_table[n_from, n_to]
-            correction = t2 - t_ideal
-            self.l_time_corr[n_to] = correction - self.TOF_table[n_from, n_to]
+            t_ideal = t_from + self.get_time_corrections(n_from, abs_t) + self.TOF_table[n_from, n_to]
+            correction = t_ideal - t_to
+            self.upd_time_corr(n_to, correction, abs_t)
         elif ((self.l_time_corr[n_to] is not None) and
               (self.l_time_corr[n_from] is None)):
-            t_ideal = t2 + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
-            correction = t1 - t_ideal
-            self.l_time_corr[n_from] = correction + self.TOF_table[n_from, n_to]
+            t_ideal = t_to + self.get_time_corrections(n_to, abs_t) - self.TOF_table[n_from, n_to]
+            correction = t_ideal - t_from
+            self.upd_time_corr(n_from, correction, abs_t)
         elif ((self.l_time_corr[n_from] is not None) and
               (self.l_time_corr[n_to] is not None)):
-            t_ideal_from = t2 + self.l_time_corr[n_to] - self.TOF_table[n_from, n_to]
-            t_ideal_to = t1 - self.l_time_corr[n_from] + self.TOF_table[n_from, n_to]
-            correction_from = t1 - t_ideal_from + self.TOF_table[n_from, n_to]
-            correction_to = t2 - t_ideal_to - self.TOF_table[n_from, n_to]
-            self.l_time_corr[n_from] = correction_from
-            self.l_time_corr[n_to] = correction_to
+            if self.prev_update[n_from] < self.prev_update[n_to]:
+                t_ideal_from = t_to + self.get_time_corrections(n_to, abs_t) - self.TOF_table[n_from, n_to]
+                correction_from = t_ideal_from - t_from
+                self.upd_time_corr(n_from, correction_from, abs_t)
+            else:
+                t_ideal_to = t_from + self.get_time_corrections(n_from, abs_t) + self.TOF_table[n_from, n_to]
+                correction_to = t_ideal_to - t_to
+                self.upd_time_corr(n_to, correction_to, abs_t)
 
-    def locate_tag(self, idxs: np.array, times: np.array, x_prev: np.array, speed=c_us):
+    def get_time_corrections(self, idxs, time):
         """
 
+        :param idx:
+        :param time:
+        :return:
+        """
+        return self.l_time_corr[idxs]
+
+    def upd_time_corr(self, idx, time, abs_t):
+
+        self.l_time_corr[idx] = time
+
+    def locate_tag(self, idxs: np.array, times: np.array, x_prev: np.array, speed, t_abs: int):
+        """
+
+        :param t_abs:
+        :param x_prev: previous location of X
         :param idxs: sorted idxs of anchors
         :param times: time when each anchor received the message from the moving tag
         :param speed: speed of traveling
@@ -123,8 +152,8 @@ class AnchorsField:
         z_s = self.coors[2, idxs]
 
         # d = c * delta_t
-        t = times.copy() + self.l_time_corr[idxs].copy()
-        # t = times.copy()
+        t = times.copy() + self.get_time_corrections(idxs, t_abs)
+        # dsts = self.TOF_dist[4, idxs]
         t = t.reshape(t.shape[0], 1)
         t_m = t @ np.ones(t.shape).T
         d_m = np.abs(t_m - t_m.T)
@@ -140,7 +169,7 @@ class AnchorsField:
                               x0=x_prev,
                               jac=J,
                               # bounds=bounds,
-                              loss="soft_l1",
+                              # loss="soft_l1",
                               # method='dogbox',
                               # tr_solver="exact"
                               )
@@ -160,8 +189,9 @@ def functions(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
         res = []
         for i in range(Xs.shape[0]):
             for j in range(i + 1, Xs.shape[0]):
-                res.append(np.abs(np.linalg.norm(np.array([x, y, z]) - np.array([Xs[j], Ys[j], Zs[j]])) -
-                                  np.linalg.norm(np.array([x, y, z]) - np.array([Xs[i], Ys[i], Zs[i]]))) - Ds[i, j])
+                a1 = np.linalg.norm(np.array([x, y, z]) - np.array([Xs[j], Ys[j], Zs[j]]))
+                a2 = np.linalg.norm(np.array([x, y, z]) - np.array([Xs[i], Ys[i], Zs[i]]))
+                res.append(np.abs(a1 - a2) - Ds[i, j])
 
         return res
 
