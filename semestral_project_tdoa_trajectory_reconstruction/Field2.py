@@ -8,7 +8,8 @@ c_us = 299.792458  # m/us
 
 # c_ns = 0.299792458  # m/ns
 dw = 1 / (499.2 * 128.0 * 1e6)  # s
-c_dw = c * dw  # m/dw = 0.00469176397 m/dw
+# c_dw = c * dw  # m/dw = 0.00469176397 m/dw
+c_dw = c / (499.2 * 128.0 * 1e6)  # s
 
 
 def dw2us(t):
@@ -60,7 +61,8 @@ class AnchorsField:
         self.prev_update = [-np.inf for _ in range(9)]
 
         # for the time synchronisation
-        hist_size = 2
+        # to fit a curve - at least 3 pts needed
+        hist_size = 8
         self.hist_time_corrections = [quu(hist_size) for _ in range(9)]
         self.hist_local_times = [quu(hist_size) for _ in range(9)]
 
@@ -81,6 +83,27 @@ class AnchorsField:
         return ax
 
     def get_t_correction(self, idx, t_local):
+        # curve predict
+        x, y = self.hist_local_times[idx].get_data(), self.hist_time_corrections[idx].get_data()
+        if np.any(x == 0):
+            print("waiting for history to be full...")
+            return self.l_time_corrections[idx]
+        if np.any(y == 0):
+            print("waiting for history to be full...")
+            return self.l_time_corrections[idx]
+
+        predict = np.poly1d(np.polyfit(x, y, 2))
+
+        a = predict(self.hist_local_times[idx].last())
+        b = self.hist_time_corrections[idx].last()
+        if not a == b:
+            pass
+
+        res = predict(t_local)
+        return res
+
+    def get_t_correction_1d(self, idx, t_local):
+        # line predict
         def getlinear(x, y):
             def inner(x1):
                 return m * x1 + b
@@ -163,10 +186,6 @@ class AnchorsField:
                 correction_to = t_ideal_to - t_to
                 self.update_t_corrections_regressive(n_to, t_abs, t_to, correction_to)
 
-    def locate_tag_lq(self, idxs: np.array, t_local_noncorrected: np.array, x_prev: np.array, speed, t_abs=0):
-        pass
-
-
     def locate_tag_tdoa(self, idxs: np.array, t_local_noncorrected: np.array, x_prev: np.array, speed, t_abs=0):
         """
 
@@ -216,17 +235,155 @@ class AnchorsField:
                               x0=copy.deepcopy(x_prev),
                               jac=J,
                               # bounds=bounds,
-                              loss="soft_l1",
-                              method='dogbox',
-                              tr_solver="exact"
+                              # loss="soft_l1",
+                              # method='dogbox',
+                              # tr_solver="exact"
                               )
 
         res_coors = x.x
         bounds = np.array(bounds)
         if np.any(res_coors < bounds[0]) or np.any(res_coors > bounds[1]):
-            print("wrong.")
-            return x_prev
+            return np.array([0, 0, 0])
         return res_coors
+
+    def locate_tag_lq(self, idxs: np.array, t_local_noncorrected: np.array, x_prev: np.array, speed, t_abs=0):
+        """
+
+        :param idxs: sorted idxs of anchors
+        :param t_local_noncorrected:
+        :param x_prev: previous location of X
+        :param speed: speed of traveling
+        :param t_abs:
+        :return:
+        """
+        idxs = np.array([self.anchor_names[arg] for arg in idxs])
+        #
+        # idxs_fixed = []
+        # local_fixed = []
+        # for i in range(idxs.shape[0]):
+        #     if self.prev_update[idxs[i]] > 0:
+        #         idxs_fixed.append(idxs[i])
+        #         local_fixed.append(t_local_noncorrected[i])
+        #
+        # idxs = np.array(idxs_fixed)
+        # t_local_noncorrected = np.array(local_fixed)
+
+        # extract anchors coordinates
+        x_s = self.coors[0, idxs]
+        y_s = self.coors[1, idxs]
+        z_s = self.coors[2, idxs]
+
+        corrections = [self.get_t_correction(idxs[i], t_local_noncorrected[i]) for i in range(len(idxs))]
+        t = copy.deepcopy(t_local_noncorrected) + copy.deepcopy(corrections)
+
+        # debug = t - copy.deepcopy(self.TOF_table[self.main_anc.number, idxs])
+        # d = np.abs(debug - debug[0])
+        # deb2 = d < 1
+        # if not deb2.all():
+        #     vvv = 0
+
+        t = t.reshape(t.shape[0], 1)
+        t_m = t @ np.ones(t.shape).T
+        d_m = -t_m.T + t_m
+        d_m = d_m * speed
+
+        res = least_squares_fit(x_s, y_s, z_s, d_m)
+
+        if self.main_anc.number in idxs:
+            r = res[idxs[self.main_anc.number]]
+        else:
+            prev = np.array(copy.deepcopy(self.prev_update))[idxs]
+            i = np.argmax(prev)
+            i = idxs[i]
+            r = res[i]
+        r = r[:-1]
+        bounds = [
+            [-16, -10, -10],
+            [4, 4, 20]
+            ]
+        if np.any(r < bounds[0]) or np.any(r > bounds[1]):
+            print("wrong.")
+            return np.array([0, 0, 0])
+        if r is not None:
+            return r
+        print("error!!!!")
+        return np.array([0, 0, 0])
+
+
+def least_squares_fit(Xs, Ys, Zs, Rs):
+    """
+
+    :param Xs:
+    :param Ys:
+    :param Zs:
+    :param Rs: Rs[i, j] time of flight from node i to j
+    :return:
+    """
+
+    Xs = copy.deepcopy(Xs)
+    Ys = copy.deepcopy(Ys)
+    Zs = copy.deepcopy(Zs)
+    Rs = copy.deepcopy(Rs)
+
+    def xp_n(i, j):
+        return Xs[i] - Xs[j]
+
+    def yp_n(i, j):
+        return Ys[i] - Ys[j]
+
+    def zp_n(i, j):
+        return Zs[i] - Zs[j]
+
+    def kp(i):
+        return Xs[i] ** 2 - Xs[j] ** 2 + Ys[i] ** 2 - Ys[j] ** 2 + Zs[i] ** 2 - Zs[j] ** 2
+
+    res = []
+
+    for j in range(Xs.shape[0]):
+        A = np.array([[xp_n(i, j), yp_n(i, j), zp_n(i, j), Rs[i, j]] for i in range(Xs.shape[0]) if i != j])
+        k = np.array([[kp(i) - Rs[i, j] ** 2] for i in range(Xs.shape[0]) if i != j]) / 2
+        try:
+            inv = np.linalg.inv(A.T @ A)
+        except:
+            continue
+        p = (inv @ A.T @ k)
+        res.append(p.ravel())
+
+    res = np.array(res)
+
+    return res
+
+
+def fit_point_between_circles(Xs, Ys, Zs, Rs):
+    """
+    Given spheres at Xs[i], Ys[i], Zs[i] with radius R[i], this
+    """
+
+    def fn(args):
+        x, y, z = args
+        res = []
+        for i in range(Xs.shape[0]):
+            dst = np.linalg.norm(np.array([x, y, z]) - np.array([Xs[i], Ys[i], Zs[i]]))
+            res.append(abs(dst - Rs[i]))
+        return res
+
+    return fn
+
+
+def fit_point_between_circles_jacob(Xs, Ys, Zs, Rs):
+    def fn(args):
+        x, y, z = args
+        res = []
+        for i in range(Xs.shape[0]):
+            n = np.linalg.norm(np.array([x, y, z]) - np.array(Xs[i], Ys[i], Zs[i]))
+            common = (n - Rs[i]) / (n * np.abs(n))
+            dx = (x - Xs[i]) * common
+            dy = (y - Ys[i]) * common
+            dz = (z - Ys[i]) * common
+            res.append([dx, dy, dz])
+        return res
+
+    return fn
 
 
 def functions(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):

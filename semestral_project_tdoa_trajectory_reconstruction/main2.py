@@ -65,10 +65,10 @@ def init_field(main_N: int):
 
 if __name__ == "__main__":
 
-    # fname_syncs = "syncs_walls5.csv"
-    # fname_blinks = "blinks_walls5.csv"
-    fname_syncs = "syncs_cold_start.csv"
-    fname_blinks = "blinks_cold_start.csv"
+    fname_syncs = "syncs_walls5.csv"
+    fname_blinks = "blinks_walls5.csv"
+    # fname_syncs = "syncs_cold_start.csv"
+    # fname_blinks = "blinks_cold_start.csv"
 
     # Data preprocessing: read files
     syncs = np.genfromtxt(fname_syncs, delimiter=',', dtype=np.float64)
@@ -92,20 +92,20 @@ if __name__ == "__main__":
     syncs[:, 4] -= initial_time
     blinks[:, 3] -= initial_time
 
-    test_anc_n = 72
+    test_anc_n = 74
     test_anc = syncs[syncs[:, 0] == test_anc_n]
-    # syncs = syncs[syncs[:, 0] != test_anc_n]
-    # syncs = syncs[syncs[:, 1] != test_anc_n]
+    syncs = syncs[syncs[:, 0] != test_anc_n]
+    syncs = syncs[syncs[:, 1] != test_anc_n]
 
     # # # # # # # # # # # # # # #
     # # # # # main part # # # # #
     # # # # # # # # # # # # # # #
-    
-    F = init_field(4)
+    F = init_field(0)
     i = 0
     i_max = syncs.shape[0]
     i_blinks = 0
-    x_prev = np.array([np.mean(F.coors[0]), np.mean(F.coors[1]), np.mean(F.coors[2])])
+    # x_prev = np.array([np.mean(F.coors[0]), np.mean(F.coors[1]), np.mean(F.coors[2])])
+    x_prev = np.array([0, 0, 0])
     res = []
     while True:
         n_active_ancs = [el is not None for el in F.l_time_corrections]
@@ -126,8 +126,8 @@ if __name__ == "__main__":
                     break
             if blinks_recorded:
                 blinks_recorded = False
-                if len(nrx_ttxs_trxs_id_ntx) < 4:
-                    print("Unable to locate the tag because at least 4 anchors are needed for that in 3D")
+                if len(nrx_ttxs_trxs_id_ntx) < 5:
+                    print("Unable to locate the tag because at least 5 anchors are needed for that in 3D")
                 else:
                     nrx_ttxs_trxs_id_ntx = np.array(nrx_ttxs_trxs_id_ntx)
                     a = np.all((nrx_ttxs_trxs_id_ntx[:, 3]) == nrx_ttxs_trxs_id_ntx[0, 3])
@@ -135,20 +135,19 @@ if __name__ == "__main__":
                     if not a:
                         print("not all messages has the same id")
                         continue
-                    # assert a, "messages ids are not the same"
                     if b:
                         nrx_ttxs_trxs_id_ntx = (nrx_ttxs_trxs_id_ntx[nrx_ttxs_trxs_id_ntx[:, 0].argsort()])
-                        l_x = F.locate_tag_tdoa(nrx_ttxs_trxs_id_ntx[:, 0],
-                                                nrx_ttxs_trxs_id_ntx[:, 2],
-                                                x_prev, c_dw,
-                                                nrx_ttxs_trxs_id_ntx[:, 1])
+                        l_x = F.locate_tag_lq(nrx_ttxs_trxs_id_ntx[:, 0],
+                                              nrx_ttxs_trxs_id_ntx[:, 2],
+                                              x_prev, c_dw,
+                                              nrx_ttxs_trxs_id_ntx[:, 1])
                         if l_x is not None:
                             x_prev = l_x
                             res.append([l_x[0], l_x[1], l_x[2], nrx_ttxs_trxs_id_ntx[0][4]])
                     else:
                         print("time stamps of msg sent by tag are different: ignoring...")
-        # if i_blinks >= test_anc.shape[0]:
-        #     break
+        if i_blinks >= 2000:
+            break
         # # # # # # # #
         # general part
         F.update_t_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3], syncs[i, 4])
