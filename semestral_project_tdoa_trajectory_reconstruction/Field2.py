@@ -62,7 +62,7 @@ class AnchorsField:
 
         # for the time synchronisation
         # to fit a curve - at least 3 pts needed
-        hist_size = 8
+        hist_size = 3
         self.hist_time_corrections = [quu(hist_size) for _ in range(9)]
         self.hist_local_times = [quu(hist_size) for _ in range(9)]
 
@@ -257,16 +257,6 @@ class AnchorsField:
         :return:
         """
         idxs = np.array([self.anchor_names[arg] for arg in idxs])
-        #
-        # idxs_fixed = []
-        # local_fixed = []
-        # for i in range(idxs.shape[0]):
-        #     if self.prev_update[idxs[i]] > 0:
-        #         idxs_fixed.append(idxs[i])
-        #         local_fixed.append(t_local_noncorrected[i])
-        #
-        # idxs = np.array(idxs_fixed)
-        # t_local_noncorrected = np.array(local_fixed)
 
         # extract anchors coordinates
         x_s = self.coors[0, idxs]
@@ -290,12 +280,12 @@ class AnchorsField:
         res = least_squares_fit(x_s, y_s, z_s, d_m)
 
         if self.main_anc.number in idxs:
-            r = res[idxs[self.main_anc.number]]
+            aaa = np.where(idxs == self.main_anc.number)[0][0]
+            r = res[aaa]
         else:
             prev = np.array(copy.deepcopy(self.prev_update))[idxs]
-            i = np.argmax(prev)
-            i = idxs[i]
-            r = res[i]
+            l_i = np.argmax(prev)
+            r = res[l_i]
         r = r[:-1]
         bounds = [
             [-16, -10, -10],
@@ -334,14 +324,13 @@ def least_squares_fit(Xs, Ys, Zs, Rs):
     def zp_n(i, j):
         return Zs[i] - Zs[j]
 
-    def kp(i):
+    def kp(i, j):
         return Xs[i] ** 2 - Xs[j] ** 2 + Ys[i] ** 2 - Ys[j] ** 2 + Zs[i] ** 2 - Zs[j] ** 2
 
     res = []
-
-    for j in range(Xs.shape[0]):
-        A = np.array([[xp_n(i, j), yp_n(i, j), zp_n(i, j), Rs[i, j]] for i in range(Xs.shape[0]) if i != j])
-        k = np.array([[kp(i) - Rs[i, j] ** 2] for i in range(Xs.shape[0]) if i != j]) / 2
+    for n in range(Xs.shape[0]):
+        A = np.array([[xp_n(n, _), yp_n(n, _), zp_n(n, _), Rs[n, _]] for _ in range(Xs.shape[0]) if _ != n])
+        k = np.array([[kp(n, _) + Rs[n, _] ** 2] for _ in range(Xs.shape[0]) if _ != n]) / 2
         try:
             inv = np.linalg.inv(A.T @ A)
         except:

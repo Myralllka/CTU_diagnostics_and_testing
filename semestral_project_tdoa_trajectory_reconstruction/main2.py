@@ -46,7 +46,6 @@ def init_field(main_N: int):
     anchors_coors = np.array([[-1.97, -12.75, -12.77, -1.81, -6.86, -1.92, -6.87, -12.27, -6.77],
                               [-8.05, -8.05, 2.75, 2.75, -2.67, -2.67, -8.05, -2.67, 2.75],
                               [2.6, 2.6, 3.13, 3.13, 2.86, 2.86, 2.6, 2.86, 3.13]])
-
     ancs = []
 
     for i in range(anchors_coors.shape[1]):
@@ -92,7 +91,7 @@ if __name__ == "__main__":
     syncs[:, 4] -= initial_time
     blinks[:, 3] -= initial_time
 
-    test_anc_n = 74
+    test_anc_n = 71
     test_anc = syncs[syncs[:, 0] == test_anc_n]
     syncs = syncs[syncs[:, 0] != test_anc_n]
     syncs = syncs[syncs[:, 1] != test_anc_n]
@@ -100,7 +99,7 @@ if __name__ == "__main__":
     # # # # # # # # # # # # # # #
     # # # # # main part # # # # #
     # # # # # # # # # # # # # # #
-    F = init_field(0)
+    F = init_field(4)
     i = 0
     i_max = syncs.shape[0]
     i_blinks = 0
@@ -142,12 +141,12 @@ if __name__ == "__main__":
                                               x_prev, c_dw,
                                               nrx_ttxs_trxs_id_ntx[:, 1])
                         if l_x is not None:
-                            x_prev = l_x
+                            # x_prev = l_x
                             res.append([l_x[0], l_x[1], l_x[2], nrx_ttxs_trxs_id_ntx[0][4]])
                     else:
                         print("time stamps of msg sent by tag are different: ignoring...")
-        if i_blinks >= 2000:
-            break
+        # if i_blinks >= 2000:
+        #     break
         # # # # # # # #
         # general part
         F.update_t_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3], syncs[i, 4])
