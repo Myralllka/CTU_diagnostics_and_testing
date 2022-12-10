@@ -53,6 +53,9 @@ class AnchorsField:
         self.init_TOF2main(c_dw)
         self.TOF_table: np.array
         self.TOF_dist: np.array
+        self.time_correction_functions = [None for _ in range(9)]
+
+        self.time_corr_prev_local_t = [0 for _ in range(9)]
 
     def init_TOF2main(self, speed):
         self.main_anc: Anchor
@@ -92,46 +95,64 @@ class AnchorsField:
         if n_from == self.main_anc.number:
             t_ideal = t_from + self.TOF_table[n_from, n_to]
             correction = t_ideal - t_to
-            self.upd_time_corr(n_to, correction, abs_t)
+            self.upd_time_corr(n_to, t_to, correction, abs_t)
             self.prev_update[n_to] = abs_t
         elif n_to == self.main_anc.number:
             t_ideal = t_to - self.TOF_table[n_from, n_to]
             correction = t_ideal - t_from
-            self.upd_time_corr(n_from, correction, abs_t)
+            self.upd_time_corr(n_from, t_from, correction, abs_t)
             self.prev_update[n_from] = abs_t
-        elif ((self.l_time_corr[n_from] is not None) and
-              (self.l_time_corr[n_to]) is None):
-            t_ideal = t_from + self.get_time_corrections(n_from, abs_t) + self.TOF_table[n_from, n_to]
-            correction = t_ideal - t_to
-            self.upd_time_corr(n_to, correction, abs_t)
-        elif ((self.l_time_corr[n_to] is not None) and
-              (self.l_time_corr[n_from] is None)):
-            t_ideal = t_to + self.get_time_corrections(n_to, abs_t) - self.TOF_table[n_from, n_to]
-            correction = t_ideal - t_from
-            self.upd_time_corr(n_from, correction, abs_t)
-        elif ((self.l_time_corr[n_from] is not None) and
-              (self.l_time_corr[n_to] is not None)):
-            if self.prev_update[n_from] < self.prev_update[n_to]:
-                t_ideal_from = t_to + self.get_time_corrections(n_to, abs_t) - self.TOF_table[n_from, n_to]
-                correction_from = t_ideal_from - t_from
-                self.upd_time_corr(n_from, correction_from, abs_t)
-            else:
-                t_ideal_to = t_from + self.get_time_corrections(n_from, abs_t) + self.TOF_table[n_from, n_to]
-                correction_to = t_ideal_to - t_to
-                self.upd_time_corr(n_to, correction_to, abs_t)
+        # elif ((self.l_time_corr[n_from] is not None) and
+        #       (self.l_time_corr[n_to]) is None):
+        #     t_ideal = t_from + self.get_time_corrections(n_from, abs_t, t_from) + self.TOF_table[n_from, n_to]
+        #     correction = t_ideal - t_to
+        #     self.upd_time_corr(n_to, t_to, correction, abs_t)
+        # elif ((self.l_time_corr[n_to] is not None) and
+        #       (self.l_time_corr[n_from] is None)):
+        #     t_ideal = t_to + self.get_time_corrections(n_to, abs_t, t_to) - self.TOF_table[n_from, n_to]
+        #     correction = t_ideal - t_from
+        #     self.upd_time_corr(n_from, t_from, correction, abs_t)
+        # elif ((self.l_time_corr[n_from] is not None) and
+        #       (self.l_time_corr[n_to] is not None)):
+        #     if self.prev_update[n_from] < self.prev_update[n_to]:
+        #         t_ideal_from = t_to + self.get_time_corrections(n_to, abs_t, t_to) - self.TOF_table[n_from, n_to]
+        #         correction_from = t_ideal_from - t_from
+        #         self.upd_time_corr(n_from, t_from, correction_from, abs_t)
+        #     else:
+        #         t_ideal_to = t_from + self.get_time_corrections(n_from, abs_t, t_from) + self.TOF_table[n_from, n_to]
+        #         correction_to = t_ideal_to - t_to
+        #         self.upd_time_corr(n_to, t_to, correction_to, abs_t)
 
-    def get_time_corrections(self, idxs, time):
-        """
+    def upd_time_corr(self, idx: int, sync_time, correction_time, abs_time):
+        if self.l_time_corr[idx] is None:
+            self.l_time_corr[idx] = correction_time
+            return
 
-        :param idx:
-        :param time:
-        :return:
-        """
-        return self.l_time_corr[idxs]
+        def getlinear(x, y):
+            def inner(x1):
+                return m * x1 + b
 
-    def upd_time_corr(self, idx, time, abs_t):
+            top = (len(x) * np.sum(x * y) - np.sum(x) * np.sum(y))
+            btm = (len(x) * np.sum(x * x) - np.sum(x) * np.sum(x))
+            m = top / btm
+            b = (np.sum(y) - m * np.sum(x)) / len(x)
+            return inner
 
-        self.l_time_corr[idx] = time
+        # # x - local time
+        # # y - error
+        predict = getlinear(np.array([self.time_corr_prev_local_t[idx], sync_time]),
+                            np.array([self.l_time_corr[idx], correction_time]))
+
+        self.time_correction_functions[idx] = predict
+        self.time_corr_prev_local_t[idx] = sync_time
+        self.l_time_corr[idx] = correction_time
+        # self.time_corr_prev_error[idx] = correction_time
+
+    def get_time_corrections(self, idx: int, abs_t: int, local_t):
+        if self.time_correction_functions[idx] is None:
+            return self.l_time_corr[idx]
+        else:
+            return self.time_correction_functions[idx](local_t)
 
     def locate_tag(self, idxs: np.array, times: np.array, x_prev: np.array, speed, t_abs: int):
         """
@@ -152,7 +173,8 @@ class AnchorsField:
         z_s = self.coors[2, idxs]
 
         # d = c * delta_t
-        t = times.copy() + self.get_time_corrections(idxs, t_abs)
+        corrections = np.array([self.get_time_corrections(i, t_abs, times[i]) for i in idxs])
+        t = times.copy() + corrections
         # dsts = self.TOF_dist[4, idxs]
         t = t.reshape(t.shape[0], 1)
         t_m = t @ np.ones(t.shape).T

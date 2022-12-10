@@ -31,7 +31,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import copy
 from scipy import stats
-from Field import *
+from Field2 import *
 
 
 mpl.use('Qt5Agg')
@@ -46,22 +46,18 @@ def init_field(main_N: int):
     anchors_coors = np.array([[-1.97, -12.75, -12.77, -1.81, -6.86, -1.92, -6.87, -12.27, -6.77],
                               [-8.05, -8.05, 2.75, 2.75, -2.67, -2.67, -8.05, -2.67, 2.75],
                               [2.6, 2.6, 3.13, 3.13, 2.86, 2.86, 2.6, 2.86, 3.13]])
-    # [0, 0, 0, 0, 0, 0, 0, 0, 0]])
-    anchors_unit_coors = [[2, 2, 0, 0, 1, 1, 2, 1, 0],
-                          [2, 0, 0, 2, 1, 2, 1, 0, 1]]
+
     ancs = []
 
     for i in range(anchors_coors.shape[1]):
         ancs.append(Anchor(anchor_names[i],
                            i,
                            anchors_coors[:, i],
-                           (anchors_unit_coors[0][i], anchors_unit_coors[1][i]),
                            False))
 
     main_anc = Anchor(anchor_names[main_N],
                       main_N,
                       anchors_coors[:, main_N],
-                      (anchors_unit_coors[0][main_N], anchors_unit_coors[1][main_N]),
                       True)
     return AnchorsField(main_anc, ancs, anchors_coors,
                         {0x44: 0, 0x45: 1, 0x46: 2, 0x47: 3, 0x48: 4, 0x49: 5, 0x4a: 6, 0x4b: 7, 0x4c: 8})
@@ -69,10 +65,10 @@ def init_field(main_N: int):
 
 if __name__ == "__main__":
 
-    fname_syncs = "syncs_walls5.csv"
-    fname_blinks = "blinks_walls5.csv"
-    # fname_syncs = "syncs_cold_start.csv"
-    # fname_blinks = "blinks_cold_start.csv"
+    # fname_syncs = "syncs_walls5.csv"
+    # fname_blinks = "blinks_walls5.csv"
+    fname_syncs = "syncs_cold_start.csv"
+    fname_blinks = "blinks_cold_start.csv"
 
     # Data preprocessing: read files
     syncs = np.genfromtxt(fname_syncs, delimiter=',', dtype=np.float64)
@@ -96,11 +92,6 @@ if __name__ == "__main__":
     syncs[:, 4] -= initial_time
     blinks[:, 3] -= initial_time
 
-    # Normalize: make all time units to be in us
-    # syncs[:, 2] = dw2s(syncs[:, 2])
-    # syncs[:, 3] = dw2s(syncs[:, 3])
-    # blinks[:, 2] = dw2s(blinks[:, 2])
-
     test_anc_n = 72
     test_anc = syncs[syncs[:, 0] == test_anc_n]
     # syncs = syncs[syncs[:, 0] != test_anc_n]
@@ -109,89 +100,67 @@ if __name__ == "__main__":
     # # # # # # # # # # # # # # #
     # # # # # main part # # # # #
     # # # # # # # # # # # # # # #
-    N_main = 4
-    F = init_field(N_main)
-
-    # For beginning let's ignore other nodes than 30
-
-    last_i = syncs.shape[0]
-    blinks_counter, i = 0, 0
-    blinks_recorded = False
-    target_located = False
-    update_corrections = True
-    res_s_prev = 0
+    
+    F = init_field(4)
+    i = 0
+    i_max = syncs.shape[0]
+    i_blinks = 0
     x_prev = np.array([np.mean(F.coors[0]), np.mean(F.coors[1]), np.mean(F.coors[2])])
-    # res = [[x_prev[0], x_prev[1], x_prev[2], test_anc_n]]
     res = []
     while True:
-        n_active_ancs = [el is not None for el in F.l_time_corr]
-        # n_active_ancs[A_names[test_anc_n]] = True
-        if not np.all(n_active_ancs):
-            F.update_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3], syncs[i, 4])
-            i += 1
-            if (i == last_i) or (blinks_counter + 1 == blinks.shape[0]):
-                break
-            continue
-        nrx_ttxs_trxs_id_ntx = []
-        # while blinks[blinks_counter, 3] <= syncs[i, 4]:
-        #     nrx_ttxs_trxs_id_ntx.append([int(blinks[blinks_counter, 1]),
-        #                                  float(blinks[blinks_counter, 3]),
-        #                                  float(blinks[blinks_counter, 2]),
-        #                                  int(blinks[blinks_counter, 4]),
-        #                                  int(blinks[blinks_counter, 0])])
-
-        while test_anc[blinks_counter, 4] < syncs[i, 4]:
-            nrx_ttxs_trxs_id_ntx.append([test_anc[blinks_counter, 1],
-                                             float(test_anc[blinks_counter, 2]),
-                                             float(test_anc[blinks_counter, 3]),
+        n_active_ancs = [el is not None for el in F.l_time_corrections]
+        n_active_ancs[test_anc_n - 68] = True
+        blinks_recorded = False
+        if np.all(n_active_ancs):
+            # main part here
+            nrx_ttxs_trxs_id_ntx = []
+            while test_anc[i_blinks, 4] < syncs[i, 4]:
+                nrx_ttxs_trxs_id_ntx.append([test_anc[i_blinks, 1],
+                                             float(test_anc[i_blinks, 2]),
+                                             float(test_anc[i_blinks, 3]),
                                              int(1),
                                              test_anc_n])
-            blinks_recorded = True
-            blinks_counter += 1
-            if blinks_counter + 1 == blinks.shape[0]:
-                break
-        # If there were some "blinks" recorded - process them.
-        if blinks_recorded:
-            blinks_recorded = False
-            if len(nrx_ttxs_trxs_id_ntx) < 4:
-                print("Unable to locate the tag because at least 4 anchors are needed for that in 3D")
-            else:
-                nrx_ttxs_trxs_id_ntx = np.array(nrx_ttxs_trxs_id_ntx)
-                a = np.all((nrx_ttxs_trxs_id_ntx[:, 3]) == nrx_ttxs_trxs_id_ntx[0, 3])
-                b = np.all((nrx_ttxs_trxs_id_ntx[:, 1]) == nrx_ttxs_trxs_id_ntx[0, 1])
-                if not a:
-                    print("not all messages has the same id")
-                    continue
-                # assert a, "messages ids are not the same"
-                if b:
-                    nrx_ttxs_trxs_id_ntx = (nrx_ttxs_trxs_id_ntx[nrx_ttxs_trxs_id_ntx[:, 0].argsort()])
-                    l_x = F.locate_tag(nrx_ttxs_trxs_id_ntx[:, 0], nrx_ttxs_trxs_id_ntx[:, 2], x_prev, c_dw,
-                                       nrx_ttxs_trxs_id_ntx[:, 1])
-                    if l_x is not None:
-                        # x_prev = l_x
-                        res.append([l_x[0], l_x[1], l_x[2], nrx_ttxs_trxs_id_ntx[0][4]])
+                blinks_recorded = True
+                i_blinks += 1
+                if i_blinks >= test_anc.shape[0]:
+                    break
+            if blinks_recorded:
+                blinks_recorded = False
+                if len(nrx_ttxs_trxs_id_ntx) < 4:
+                    print("Unable to locate the tag because at least 4 anchors are needed for that in 3D")
                 else:
-                    print("time stamps of msg sent by tag are different: ignoring...")
-
-        # increment counters and check for terminate conditions
-        F.update_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3], syncs[i, 4])
+                    nrx_ttxs_trxs_id_ntx = np.array(nrx_ttxs_trxs_id_ntx)
+                    a = np.all((nrx_ttxs_trxs_id_ntx[:, 3]) == nrx_ttxs_trxs_id_ntx[0, 3])
+                    b = np.all((nrx_ttxs_trxs_id_ntx[:, 1]) == nrx_ttxs_trxs_id_ntx[0, 1])
+                    if not a:
+                        print("not all messages has the same id")
+                        continue
+                    # assert a, "messages ids are not the same"
+                    if b:
+                        nrx_ttxs_trxs_id_ntx = (nrx_ttxs_trxs_id_ntx[nrx_ttxs_trxs_id_ntx[:, 0].argsort()])
+                        l_x = F.locate_tag_tdoa(nrx_ttxs_trxs_id_ntx[:, 0],
+                                                nrx_ttxs_trxs_id_ntx[:, 2],
+                                                x_prev, c_dw,
+                                                nrx_ttxs_trxs_id_ntx[:, 1])
+                        if l_x is not None:
+                            x_prev = l_x
+                            res.append([l_x[0], l_x[1], l_x[2], nrx_ttxs_trxs_id_ntx[0][4]])
+                    else:
+                        print("time stamps of msg sent by tag are different: ignoring...")
+        # if i_blinks >= test_anc.shape[0]:
+        #     break
+        # # # # # # # #
+        # general part
+        F.update_t_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3], syncs[i, 4])
         i += 1
-        if (i >= last_i) or (blinks_counter + 1 >= blinks.shape[0]):
+        if i >= i_max or (i_blinks >= test_anc.shape[0]):
             break
-
-        if blinks_counter >= 800:
-            break
-
     ax = F.plot()
-    # ax.set_autoscale_on(False)
     res = np.array(res).T
     if res.size == 0:
         print("nothing happened: anchors were not synchronized")
     else:
-        res1 = res[0:3, res[-1] == 5]
-        # res1 = res[0:3, res[-1] == test_anc_n]
-        # print(res.shape)
-        ax.plot(res1[0, :], res1[1, :], res1[2, :], 'y')
-        res2 = res[0:3, res[-1] == 30]
-        ax.plot(res2[0, :], res2[1, :], res2[2, :], 'b')
+        res1 = res[0:3, res[-1] == test_anc_n]
+        print(res1.shape)
+        ax.scatter(res1[0, :], res1[1, :], res1[2, :], 'yo')
         plt.show()
