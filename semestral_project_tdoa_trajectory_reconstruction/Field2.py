@@ -84,6 +84,8 @@ class AnchorsField:
 
     def get_t_correction(self, idx, t_local):
         # curve predict
+        if idx == self.main_anc.number:
+            return 0
         x, y = self.hist_local_times[idx].get_data(), self.hist_time_corrections[idx].get_data()
         if np.any(x == 0):
             print("waiting for history to be full...")
@@ -134,12 +136,11 @@ class AnchorsField:
         return res
 
     def update_t_corrections_regressive(self, idx, t_abs, t_local, t_correction):
-        if self.hist_time_corrections[idx].last() != t_correction:
-            self.hist_time_corrections[idx].append(t_correction)
         if self.hist_local_times[idx].last() != t_local:
             self.hist_local_times[idx].append(t_local)
-
-        self.l_time_corrections[idx] = t_correction
+            self.l_time_corrections[idx] = t_correction
+            # if self.hist_time_corrections[idx].last() != t_correction:
+            self.hist_time_corrections[idx].append(t_correction)
 
     def update_t_corrections(self, n_from, n_to, t_from, t_to, t_abs=0):
         """
@@ -160,31 +161,105 @@ class AnchorsField:
             correction = t_ideal - t_to
             self.update_t_corrections_regressive(n_to, t_abs, t_to, correction)
             self.prev_update[n_to] = t_abs
+            deb = t_to + correction - self.TOF_table[n_from, n_to]
+            assert abs(deb - t_from) < 1, "wrong sync main n_from"
         elif n_to == self.main_anc.number:
             t_ideal = t_to - self.TOF_table[n_from, n_to]
             correction = t_ideal - t_from
             self.update_t_corrections_regressive(n_from, t_abs, t_from, correction)
+            deb = t_from + correction + self.TOF_table[n_from, n_to]
+            assert abs(deb - t_to) < 1, "wrong sync main n_to"
             self.prev_update[n_from] = t_abs
         elif ((self.l_time_corrections[n_from] is not None) and
               (self.l_time_corrections[n_to]) is None):
             t_ideal = t_from + self.get_t_correction(n_from, t_from) + self.TOF_table[n_from, n_to]
             correction = t_ideal - t_to
             self.update_t_corrections_regressive(n_to, t_abs, t_to, correction)
+            self.prev_update[n_to] = self.prev_update[n_from]
+            deb = t_to + correction - self.TOF_table[n_from, n_to]
+            assert abs((t_from + self.get_t_correction(n_from, t_from)) - deb) < 1, "wrong sync from2None"
         elif ((self.l_time_corrections[n_to] is not None) and
               (self.l_time_corrections[n_from] is None)):
-            t_ideal = t_to + self.get_t_correction(n_to, t_from) - self.TOF_table[n_from, n_to]
+            t_ideal = t_to + self.get_t_correction(n_to, t_to) - self.TOF_table[n_from, n_to]
             correction = t_ideal - t_from
             self.update_t_corrections_regressive(n_from, t_abs, t_from, correction)
+            self.prev_update[n_from] = self.prev_update[n_to]
+            deb = t_from + correction + self.TOF_table[n_from, n_to]
+            sec = (t_to + self.get_t_correction(n_to, t_to))
+            assert abs(sec - deb) < 1, "wrong sync None2to"
         elif ((self.l_time_corrections[n_from] is not None) and
               (self.l_time_corrections[n_to] is not None)):
             if self.prev_update[n_from] < self.prev_update[n_to]:
-                t_ideal_from = t_to + self.get_t_correction(n_to, t_from) - self.TOF_table[n_from, n_to]
+                t_ideal_from = t_to + self.get_t_correction(n_to, t_to) - self.TOF_table[n_from, n_to]
                 correction_from = t_ideal_from - t_from
                 self.update_t_corrections_regressive(n_from, t_abs, t_from, correction_from)
             else:
                 t_ideal_to = t_from + self.get_t_correction(n_from, t_from) + self.TOF_table[n_from, n_to]
                 correction_to = t_ideal_to - t_to
                 self.update_t_corrections_regressive(n_to, t_abs, t_to, correction_to)
+
+    def locate_tag_tdoa_noneabs(self, idxs: np.array, t_local_noncorrected: np.array, x_prev: np.array, speed, t_abs=0):
+        """
+
+        :param idxs: sorted idxs of anchors
+        :param t_local_noncorrected:
+        :param x_prev: previous location of X
+        :param speed: speed of traveling
+        :param t_abs:
+        :return:
+        """
+        # Look for x, y, z coordinates of a moving tag.
+        idxs = np.array([self.anchor_names[arg] for arg in idxs])
+
+        # d = np.array(copy.deepcopy(self.prev_update))
+        # last_updates = d[idxs]
+        # if -np.inf in last_updates:
+        #     return None
+        # idd = np.argpartition(last_updates, -5)[-5:]
+        # idd = np.sort(idd)
+        # idxs = idxs[idd]
+        # t_local_noncorrected = copy.deepcopy(t_local_noncorrected[idd])
+
+        # extract anchors coordinates
+        x_s = self.coors[0, idxs]
+        y_s = self.coors[1, idxs]
+        z_s = self.coors[2, idxs]
+
+        # d = c * delta_t
+        corrections = [self.get_t_correction(idxs[i], t_local_noncorrected[i]) for i in range(len(idxs))]
+        t = copy.deepcopy(t_local_noncorrected) + copy.deepcopy(corrections)
+        debug = copy.deepcopy(t) - copy.deepcopy(self.TOF_table[3, idxs])
+        deb2 = abs(debug - debug[0]) < 1
+        if not deb2.all():
+            vvv = 0
+        t = t.reshape(t.shape[0], 1)
+        t_m = t @ np.ones(t.shape).T
+        d_m = - t_m + t_m.T
+        d_m = d_m * speed
+
+        F = tdoa_noneabs(x_s, y_s, z_s, d_m)
+        J = tdoa_jacob_noneabs(x_s, y_s, z_s, d_m)
+
+        bounds = [
+            [-16, -10, 0],
+            [4, 4, 5]
+            ]
+
+        x = opt.least_squares(F,
+                              x0=copy.deepcopy(x_prev),
+                              jac=J,
+                              # bounds=bounds,
+                              loss="soft_l1",
+                              method='dogbox',
+                              tr_solver="exact"
+                              )
+
+        res_coors = x.x
+        bounds = np.array(bounds) * 2
+        if np.any(res_coors < bounds[0]) or np.any(res_coors > bounds[1]):
+            print("wrong.")
+            return None
+        return res_coors
 
     def locate_tag_tdoa(self, idxs: np.array, t_local_noncorrected: np.array, x_prev: np.array, speed, t_abs=0):
         """
@@ -201,7 +276,7 @@ class AnchorsField:
 
         d = np.array(copy.deepcopy(self.prev_update))
         last_updates = d[idxs]
-        idd = np.argpartition(last_updates, -3)[-3:]
+        idd = np.argpartition(last_updates, -5)[-5:]
         idd = np.sort(idd)
         idxs = idxs[idd]
         t_local_noncorrected = copy.deepcopy(t_local_noncorrected[idd])
@@ -223,8 +298,8 @@ class AnchorsField:
         d_m = np.abs(t_m - t_m.T)
         d_m = d_m * speed
 
-        F = functions(x_s, y_s, z_s, d_m)
-        J = jacobian(x_s, y_s, z_s, d_m)
+        F = tdoa(x_s, y_s, z_s, d_m)
+        J = tdoa_jacob(x_s, y_s, z_s, d_m)
 
         bounds = [
             [-16, -10, 0],
@@ -235,15 +310,15 @@ class AnchorsField:
                               x0=copy.deepcopy(x_prev),
                               jac=J,
                               # bounds=bounds,
-                              # loss="soft_l1",
-                              # method='dogbox',
-                              # tr_solver="exact"
+                              loss="soft_l1",
+                              method='dogbox',
+                              tr_solver="exact"
                               )
 
         res_coors = x.x
         bounds = np.array(bounds)
         if np.any(res_coors < bounds[0]) or np.any(res_coors > bounds[1]):
-            return np.array([0, 0, 0])
+            return None
         return res_coors
 
     def locate_tag_lq(self, idxs: np.array, t_local_noncorrected: np.array, x_prev: np.array, speed, t_abs=0):
@@ -274,7 +349,7 @@ class AnchorsField:
 
         t = t.reshape(t.shape[0], 1)
         t_m = t @ np.ones(t.shape).T
-        d_m = -t_m.T + t_m
+        d_m = t_m - t_m.T
         d_m = d_m * speed
 
         res = least_squares_fit(x_s, y_s, z_s, d_m)
@@ -293,11 +368,11 @@ class AnchorsField:
             ]
         if np.any(r < bounds[0]) or np.any(r > bounds[1]):
             print("wrong.")
-            return np.array([0, 0, 0])
+            return None
         if r is not None:
             return r
         print("error!!!!")
-        return np.array([0, 0, 0])
+        return None
 
 
 def least_squares_fit(Xs, Ys, Zs, Rs):
@@ -375,7 +450,7 @@ def fit_point_between_circles_jacob(Xs, Ys, Zs, Rs):
     return fn
 
 
-def functions(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
+def tdoa(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
     """
     Given anchors at Xs[i], Ys[i], Zs[i] and TDoA between observers, this
     returns a function that evaluates the system of N hyperbolas for given x, y, z.
@@ -395,7 +470,7 @@ def functions(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
     return fn
 
 
-def jacobian(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
+def tdoa_jacob(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
     """
     Collection of the partial derivatives of each function with respect to each independent variable.
     """
@@ -413,6 +488,49 @@ def jacobian(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
                 adx = ((x - Xs[j]) / sq_j - (x - Xs[i]) / sq_i) * common
                 ady = ((y - Ys[j]) / sq_j - (y - Ys[i]) / sq_i) * common
                 adz = ((z - Zs[j]) / sq_j - (z - Zs[i]) / sq_i) * common
+
+                res.append([adx, ady, adz])
+        return res
+
+    return fn
+
+
+def tdoa_noneabs(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
+    """
+    Given anchors at Xs[i], Ys[i], Zs[i] and TDoA between observers, this
+    returns a function that evaluates the system of N hyperbolas for given x, y, z.
+    """
+
+    def fn(args):
+        x, y, z = args
+        res = []
+        for i in range(Xs.shape[0]):
+            for j in range(i + 1, Xs.shape[0]):
+                a1 = np.linalg.norm(np.array([x, y, z]) - np.array([Xs[j], Ys[j], Zs[j]]))
+                a2 = np.linalg.norm(np.array([x, y, z]) - np.array([Xs[i], Ys[i], Zs[i]]))
+                res.append(a1 - a2 - Ds[i, j])
+
+        return res
+
+    return fn
+
+
+def tdoa_jacob_noneabs(Xs: np.array, Ys: np.array, Zs: np.array, Ds: np.array):
+    """
+    Collection of the partial derivatives of each function with respect to each independent variable.
+    """
+
+    def fn(args):
+        x, y, z = args
+        res = []
+        for i in range(Xs.shape[0]):
+            for j in range(i + 1, Xs.shape[0]):
+                den1 = np.linalg.norm(np.array([x, y, z]) - np.array([Xs[j], Ys[j], Zs[j]]))
+                den2 = np.linalg.norm(np.array([x, y, z]) - np.array([Xs[i], Ys[i], Zs[i]]))
+
+                adx = (x - Xs[j]) / den1 - (x - Xs[i]) / den2
+                ady = (y - Ys[j]) / den1 - (y - Ys[i]) / den2
+                adz = (z - Zs[j]) / den1 - (z - Zs[i]) / den2
 
                 res.append([adx, ady, adz])
         return res
