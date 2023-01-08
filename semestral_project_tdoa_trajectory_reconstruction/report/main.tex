@@ -45,6 +45,9 @@
 \usepackage{graphicx}
 \usepackage{caption}
 \usepackage{hyperref}
+\usepackage{subfig}
+\usepackage{lipsum}
+
 
 %
 \ifCLASSOPTIONcompsoc
@@ -80,8 +83,8 @@ pdfkeywords={TDoA}}
 % =================================================================================
 \IEEEraisesectionheading{\section{Introduction}\label{sec:introduction}}
 Within the subject "Diagnostics and testing", there is a compulsory semester project for each student on a chosen topic.
-The project "Time-Difference-of-Arrival (TDoA) trajectory reconstruction" sounded the most algorithmic among others, so it was chosen. 
-The main goal is to find a trajectory of a moving object (i.e. tag) repeatedly transmitting a signal, using a set of given fixed-position receivers (i.e. anchors).
+The project "Time-Difference-of-Arrival (TDoA) trajectory reconstruction" sounded the most algorithmic among others, so the author chose it.
+The main goal is to find a trajectory of a moving object (i.e. tag) repeatedly transmitting a signal using a set of given fixed-position receivers (i.e. anchors).
 
 % =================================================================================
 \section{Problem description}
@@ -91,29 +94,29 @@ The main goal is to find a trajectory of a moving object (i.e. tag) repeatedly t
     \centering
     \includegraphics[width=0.30\textwidth]{graphics/scheme.jpg}
     \caption{The model of the experiment. Nine anchors connected in a network to some main recording computer, and some number of unknown moving objects (in both files, there are two of them, number 5 and number 30).}
-    \label{fig:3D_map}
+    \label{fig:time}
 \end{figure}
 
 Indoor localisation is a popular and widely researched topic nowadays.
 TDoA localisation is based on periodically sending a message by a tag to a set of fixed anchors. 
-The theory behind it is elementary and relies on a few facts: the speed of a signal is the speed of light (so it's known), and the time of sending and receiving the message both are known.
-Then the task is just a school geometry problem - having a few equations find the unknown variable.
+The theory behind it is elementary and relies on a few facts: the speed of a signal is the speed of light (so it is known), and the time of sending and receiving the message both are known.
+Then the task is just a school geometry problem - having a set of equations find the unknown variables.
 
-But in the real world, everything is not as perfect and smooth as in theory, so while implementing this method, some more problems should be solved.
-The first one - travelling at the speed of light is a sensitive process that can not be measured as precisely, so exact real-time ultra wide band (UWB) transmitters with precise clocks are needed. 
-It was solved by people who were setting up the experiment and have chosen DW1000 chips.
-The second problem - these clocks should be somehow synchronised because there is no perfect physical mechanism, and without the synchronisation, they are useless.
+However, in the real world, everything is not as perfect and smooth as in theory, so some more problems should be solved while implementing this method.
+The first one - travelling at the speed of light is a sensitive process that can not be measured precisely, so precise real-time ultra-wideband (UWB) transmitters with precise clocks are needed. 
+It was solved by people setting up the experiment and choosing DW1000 chips.
+The second problem is that these clocks should be post-synchronised because there is no perfect physical mechanism, and without synchronisation, they are useless.
 The third one - due to possible reflections from different surfaces, data transfer errors, oscillations, etc., the recorded time of travelling from the tag to anchors can be changed or have some noise.
 
 % =================================================================================
-\section{Set tasks}
+\section{Subtasks}
 \label{sec:set_tasks}
 The task was divided into smaller steps to make it easier to solve the main task.
 \begin{itemize}
-    \item Given datasets analyses;
+    \item Given data analyses;
     \item Research into related works;
     \item Time synchronisation problem;
-    \item Known object localisation;
+    \item Known object localisation (tag);
     \item Unknown object localisation;
 \end{itemize}
 
@@ -133,12 +136,12 @@ The task was divided into smaller steps to make it easier to solve the main task
     \label{fig:3D_map}
 \end{figure}
 
-Along with the project assignment, two files from the real-world experiments, and an indoor map (see \autoref{fig:UWB_map}) were provided. So the room in 3D can be visualized as in \autoref{fig:3D_map}, where all anchors are arranged in three rows, each on a different height.
+Along with the project assignment, two files from the real-world experiments and an indoor map (see \autoref{fig:UWB_map}) were provided. So the room in 3D can be visualised as in \autoref{fig:3D_map}, where all anchors are arranged in three rows, each on a different height.
 
 For each experiment, there are "blinks" and "syncs" files.
-"syncs.csv" files contain synchronisation messages between anchors in the form "addr\_tx, addr\_rx, ts\_tx, ts\_rx, the timestamp",  where the first two columns are addresses of the transmitter and receiver, respectively, next two columns correspond to the timestamps of the recording module DWM1000 on each anchor, which measures time in its own units (here and further - $[\SI{}{dw}]$) where $\SI{1}{dw} = \frac{1}{(128*499,2*10^6)}\SI{}{s}$. 
+"syncs.csv" files contain synchronisation messages between anchors in the form "addr\_tx, addr\_rx, ts\_tx, ts\_rx, the timestamp",  where the first two columns are addresses of the transmitter and receiver, respectively, the following two columns correspond to the timestamps of the recording module DWM1000 on each anchor, which measures time in its own units (here and further - $[\SI{}{dw}]$) where $\SI{1}{dw} = \frac{1}{(128*499,2*10^6)}\SI{}{s}$. 
 The last column corresponds to the timestamp of an experiment recording system, which runs on Unix, time in $[\SI{}{ms}]$.
-"blinks.csv" files contain location messages between an unknown moving object and anchors in the format "addr\_tx, addr\_rx, ts\_rx, ts\_tx, id" where the first two columns are addresses of transmitter and receiver, respectively, next two columns are corresponding timestamps of message transmission and receiving, and the last column corresponds to the message id.
+"blinks.csv" files contain location messages between an unknown moving object and anchors in the format "addr\_tx, addr\_rx, ts\_rx, ts\_tx, id", where the first two columns are addresses of transmitter and receiver, respectively, next two columns are corresponding timestamps of message transmission and receiving, and the last column corresponds to the message id.
 
 \begin{figure}[ht]
     \centering
@@ -155,27 +158,27 @@ The last column corresponds to the timestamp of an experiment recording system, 
 \begin{figure}[ht]
     \centering
     \includegraphics[width=0.48\textwidth]{graphics/errors_scaled.png}
-    \caption{The error between the time frames of anchor 76 and each other anchor (y axis) with respect to the timestamp of 76th anchor (x axis), first 100 in the dataset.}
+    \caption{The error between the time frames of anchor 76 and each other anchor (y-axis) with respect to the timestamp of 76th anchor (x-axis), first 100 in the dataset.}
     \label{fig:stat_cropped}
 \end{figure}
 % \begin{figure}[ht]
 %     \centering
 %     \includegraphics[width=0.48\textwidth]{graphics/errors_close.png}
-%     \caption{The error between the time frames of anchor 76 and 74 (y axis) with respect to the timestamp of 76th anchor (x axis).}
+%     \caption{The error between the time frames of anchor 76 and 74 (y-axis) with respect to the timestamp of the 76th anchor (x-axis).}
 %     \label{fig:stat_cropped_alot}
 % \end{figure}
 
-The number of messages coming from each to each node is shown in the \autoref{fig:tbl}. From this table its obvious that not all anchors exchange messages - for example the anchor $70$ is almost isolated (only two connections), but such anchors as $69, 71, 72 ,73, 74$ are well-connected (only three missing connections).
+The number of messages coming from each to each node is shown in the \autoref{fig:tbl}. From this table, it is obvious that not all anchors exchange messages - for example, the anchor $70$ is almost isolated (only two connections), but such anchors as $69, 71, 72, 73, 74 $ are well-connected (only three missing connections).
 
-The time difference (error) between 75 and each other anchor is shown in the \autoref{fig:stat_all}. Its shown that the error is not constant or linear. The first 100 computed errors are shown in \autoref{fig:stat_cropped}. The conclusion is that sync messages are not actually periodic and there is a lot of data loss in the process of communication between anchors.
+The time difference (error) between 75 and each other anchor is shown in the \autoref{fig:stat_all}. Its shows that the error is not constant or linear. The first 100 computed errors are shown in \autoref{fig:stat_cropped}. The conclusion is that sync messages are not actually periodic, and there is a lot of data loss in the process of communication between anchors.
 
 % =================================================================================
 \section{Related works}
 \label{sec:ps}
-The TDoA indoor localisation is a well-described topic, but in most cases, it's done in 2D due to different singularities and issues in 3D. In \cite{Laaraiedh2009}, it is written how to overcome them. 
+The TDoA indoor localisation is well-described, but in most cases, it's done in 2D due to different singularities and issues in 3D. In \cite{Laaraiedh2009}, it is written how to overcome them. 
 
 The general idea and method of TDoA self-localisation are well-described in a \cite{Keefe2017}. 
-In \cite{Yuzan2019}, there is a proposed online time-synchronization and location estimation method. 
+In \cite{Yuzan2019}, there is a proposed online time-synchronisation and location estimation method. 
 Still, it can not be implemented for the post-processing because it needs some external experiment setup for all anchors.
 
 The implemented localisation algorithms are taken from \cite{Weng2011}, and \cite{Yuzan2019}.
@@ -184,8 +187,8 @@ The implemented localisation algorithms are taken from \cite{Weng2011}, and \cit
 \section{Method}
 \label{sec:method}
 
-\subsection{Trajectory reconstruction using nonlinear least-squares}
-\label{sec:traj_recon}
+\subsection{Trajectory reconstruction using non-linear least-squares}
+\label{sec:solution_nlsq}
 Here and further consider already synchronised time with respect to the main anchor.
 Let any two non-similar anchors be $i$ and $j$ located on a distance $d_{ij}$.
 Timestamps of received signals from the tag by each anchor are denoted as $t_i$ and $t_j$.
@@ -213,7 +216,7 @@ and the equation \eqref{eq:dt1}, let us define the function f:
 Where both $t_j$ and $t_i$ are given, $c$ is a speed of a signal (speed of light), and $d_i, d_j$ together contain three unknowns. 
 
 To find them, at least three such equations are needed, which corresponds to at least three anchors.
-This problem is already formulated as a non-linear least squares (NLLS) problem so that it can be solved with any optimizer for such a task.
+This problem is already formulated as a non-linear least squares (NLLS) problem so that it can be solved with any optimiser for such a task.
 
 The gradient of $f$ needed for NLLS can be computed as:
 \begin{equation}
@@ -229,14 +232,15 @@ The gradient of $f$ needed for NLLS can be computed as:
 \end{equation}
 
 \subsection{Linear Closed-Form Solution}
+\label{sec:solution_lsq}
 Another implemented method is much easier in algebra but needs at least four anchors to work.
 Assume the anchor with index $0$ as the main anchor with coordinates $(x_0, y_0, z_0))$.
-Having one main anchor and $N-1$ other anchors with indexes $i=1 \ldots N$, there will be $N-1$ equations of a form \autoref{eq:ddcdt} for distances from the main to $i-th$ anchor:
+Having one main anchor and $N-1$ other anchors with indexes $i=1 \ldots N$, there will be $N-1$ equations of a form \autoref{eq:dist} for distances from the main to $i-th$ anchor:
 \begin{equation}
     \begin{array}{cc}
         (x-x_0)^2 + (y-y_0)^2 + (z-z_0)^2 - d_0^2 = 0\\
         \vdots \\
-        (x-x_N)^2 + (y-y_N)^2 + (z-z_N)^2 - (d_1 + d_{1N}) = 0 
+        (x-x_N)^2 + (y-y_N)^2 + (z-z_N)^2 - (d + d_{N}) = 0
     \end{array}
 \end{equation}
 After subtracting the first equation from all others, the result will be the set of equations that, after simplification, can be rewritten as a set of linear equation
@@ -246,9 +250,9 @@ After subtracting the first equation from all others, the result will be the set
 where
 \begin{equation}
     A = \left[ \begin{array}{cccc}
-         x_0 - x_1 & y_0 - y_1 & z_0 - z_1 & d_01  \\
+         x_0 - x_1 & y_0 - y_1 & z_0 - z_1 & d_{01}  \\
          \vdots & \vdots & \vdots & \vdots \\
-         x_0 - x_N & y_0 - y_N & z_0 - z_N & d_0N  \\
+         x_0 - x_N & y_0 - y_N & z_0 - z_N & d_{0N}  \\
     \end{array} \right],
 \end{equation}
 \begin{equation}
@@ -276,10 +280,10 @@ So that can be solved using the linear least-squares method:
 \subsection{Time synchronisation}
 \label{sec:time_sync}
 
-Time synchronisation is essential for this task because without it, results have no sense.
-Firstly, the memoisation was chosen for the time synchronization because its easy to implement and check how it works.
+Time synchronisation is essential for this task because results have no sense without it.
+Firstly, memoisation was chosen for time synchronisation because it is easy to implement and check how it works.
 Let $T_{ij}$ be the time of flight from anchor $i$ to $j$, the main anchor index to be $m$.
-If clocks on two anchors are perfectly synchronized, the ideal timestamps of sending a message from $t_m$ to $t_i$ would be:
+If clocks on two anchors are perfectly synchronised, the ideal timestamps of sending a message from $t_m$ to $t_i$ would be:
 \begin{equation}
     \label{eq:sync_ideal}
     t_{i}^* = t_m + T_{mi},
@@ -336,55 +340,87 @@ In the opposite situation, when the anchor $j$ is not yet synchronised,
 \end{equation}
 
 \subsection{Error prediction}
-\begin{figure}[ht]
-    \centering
-    \includegraphics[width=0.48\textwidth]{graphics/68_prediction.png}
-    \caption{The difference between the real and predicted values. First three values are training values.}
-    \label{fig:pred}
-\end{figure}
-To improve the time synchronisation, the simple polynom fit and prediction is used. 
-In \autoref{fig:pred} it is shown that 1d line is good enough estimate for the function on a short distance.
-Given even two points, the line going through them can be estimated and than the future point can be predicted.
-Given three points the data will not be overfeated and the prediction result can be improved, it will ignore some minor oscillations and noise.
-So it was decided to use a linear prediction to find the time difference between any two anchors by saving the last 3 error corrections between them.
-If the history is not complete (there were less then 3 messages processed) the data from $A_{cor}$ table can be used.
+\label{sec:time_sync2}
+The approach described in \autoref{sec:time_sync} is not good enough in this case because, for such sensitive data as in this project, even the smallest errors can influence the result a lot.
+To improve the time synchronisation, simple polynomial fit and prediction are used.
+
+The 2d order polynomial fitted from three last time points were chosen, and the next point is predicted from that data.
+If the history (last three points) is incomplete when there were less than three messages processed, the data from $A_{cor}$ table can be used.
 % =================================================================================
 \section{Implementation}
-% \label{sec:impl}
-% \begin{figure}[ht]
-%     \centering
-%     \includegraphics[width=0.48\textwidth]{graphics/walls5_res.png}
-%     \caption{The result of the trajectory reconstruction from the walls5 dataset.}
-%     \label{fig:walls_5}
-% \end{figure}
-% \begin{figure}[ht]
-%     \centering
-%     \includegraphics[width=0.48\textwidth]{graphics/cold_start.png}
-%     \caption{The result of the trajectory reconstruction from the cold\_start dataset.}
-%     \label{fig:cold_start}
-% \end{figure}
 
-
-Everything was implemented in Python using 'numpy' and 'scipy' libraries.
+Everything was implemented in Python using 'NumPy' and 'scipy' libraries.
 The first phase is data preprocessing. 
-In each file repeating rows are eliminated (because they are useless), and each file is sorted with respect to the timestamp.
+In each file, repeating rows are eliminated (because they are useless), and each file is sorted with respect to the timestamp.
 After that, there is an iteration through the whole syncs file to keep track of the time synchronisation, and when there are blinks - they are processed concerning the current inner state of the system.
-If the signal was sent by the tag at different timestamps or less than three anchors had received the message, it is ignored, and the corresponding message is displayed.
+If less than four anchors have received the message from the tag, the message is ignored, and the corresponding message is printed to the terminal.
 
-The class 'AnchorsField' is the main class that keeps track of the matrix $A_{corr}$ as an inner parameter of the field.
-At each point of time, the location of the tag from a given data can be found as a result of solving the NLLS with the optimiser \href{https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html#scipy.optimize.least_squares}{'scipy.optimize.least\_squares'}.
+At each point of time, the tag's location can be found from the data of a received message after solving the NLLS described in \autoref{sec:solution_nlsq} using \href{https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html#scipy.optimize.least_squares}{'scipy. optimise.least\_squares'}, or using the simple least-squares described in \autoref{sec:solution_lsq}.
 
-% The obtained result from the 'walls5' dataset is shown in the \autoref{fig:walls_5}, and the obtained result from the 'cold\_start' dataset is shown in the \autoref{fig:cold_start}.
-
-
-The whole implementation is available by this link ":TODO link"
+The whole implementation is available by this \href{https://github.com/Myralllka/CTU_diagnostics_and_testing/tree/master/semestral_project_tdoa_trajectory_reconstruction}{link on GitHub}, which is now publicly available.
 % =================================================================================
-\section{Error measurement}
-\label{sec:error}
+\section{Results}
+\label{sec:res}
+\begin{figure}[ht]% [hpbt] what you need
+    \centering
+    \includegraphics[width=\linewidth]{graphics/ress/tdoa_tag5_est.png}
+    \caption{The result of localisation of tag with number 5, projection on the x-y plane.}
+    \label{fig:tdoa_tag5_res}
+\end{figure}
+\begin{figure*}[ht]% [hpbt] what you need
+    \centering
+    \includegraphics[width=0.49\linewidth, height=0.4\textwidth]{graphics/ress/71_72.png}
+    \includegraphics[width=0.49\linewidth, height=0.4\textwidth]{graphics/ress/72_72.png}
+    \includegraphics[width=0.49\linewidth, height=0.4\textwidth]{graphics/ress/74_72.png}
+    \includegraphics[width=0.49\linewidth, height=0.4\textwidth]{graphics/ress/76_72.png}
+    \caption{The result of localisation of anchors with different numbers (specified in captions), projection on the x-y plane, least squares method. The Mean Absolute Errors (MAE's) for each case are also specified in the titles.}
+    \label{fig:lq_res}
+\end{figure*}
+\begin{figure*}[ht]% [hpbt] what you need
+    \centering
+    \includegraphics[width=0.49\linewidth, height=0.4\textwidth]{graphics/ress/tdoa_71_72.png}
+    \includegraphics[width=0.49\linewidth, height=0.4\textwidth]{graphics/ress/tdoa_72_72.png}
+    \includegraphics[width=0.49\linewidth, height=0.4\textwidth]{graphics/ress/tdoa_74_72.png}
+    \includegraphics[width=0.49\linewidth, height=0.4\textwidth]{graphics/ress/tdoa_76_72.png}
+    \caption{The result of localisation of anchors with different numbers (specified in captions), projection on the x-y plane, non-linear least squares method. The Mean Absolute Errors (MAE's) for each case are also specified in the titles.}
+    \label{fig:tdoa_res}
+\end{figure*}
+
+The first experiment was to localise the known position object (anchor) with respect to other anchors if they exchange the signal with each other (ideal case). 
+In the \autoref{fig:lq_res}, the results of the LSQ approach described in \autoref{sec:solution_lsq} are shown, and in the \autoref{fig:tdoa_res}, the results of the NLSQ described in \autoref{sec:solution_nlsq}. 
+The improved synchronisation described in \autoref{sec:time_sync2} is used in both cases. 
+In each plot's title, it is also specified the Mean Absolute Error (MAE) for each experiment, which can be computed because the exact position of each anchor is known: it can be computed as 
+\begin{equation}
+    \frac{\sum_{i=1}^{n}|\tilde{x}_i - x_i|}{n},
+\end{equation}
+where $n$ stands for the number of points computed from the data, $x$ for the real coordinates of the anchor and $\tilde{x}$ for the estimated.
+In some cases, it is not seen why the MAE is quite big if the data is almost at one point.
+This is because all plots are only 2D projections on the x-y plane, but objects are in 3D, so in that cases, the error is in z-coordinate.
+
+In \autoref{fig:tdoa_tag5_res}, the result of the localisation of a static tag (number 30) is presented.
+The exact position of it is not known, but it is known from the assignment that this tag is static, so found points should at least be somehow close to each other.
+The result is wrong, so the last part of the set tasks is incomplete.
 
 % =================================================================================
 \section{Conclusion}
-The conclusion goes here.
+Back to \autoref{sec:set_tasks}, step by step conclusion:
+\begin{itemize}
+    \item Given data analyses - done in \autoref{sec:data_desc};
+    \item Research into related works - done in \autoref{sec:ps}
+    \item Time synchronisation problem solution - proposed in \autoref{sec:time_sync2} and implemented in code;
+    \item Known static object localisation (tag) - described in \autoref{sec:solution_nlsq} and \autoref{sec:solution_lsq} and results are described in \autoref{sec:res};
+    \item Unknown object localisation - described in \autoref{sec:solution_nlsq} and \autoref{sec:solution_lsq} and implemented, but not working.
+\end{itemize}
+
+The main error seems to be with the time synchronisation because the numbers there are huge ($10e7 - 10e18$), and even the smallest error in prediction causes significant errors in the position estimation. 
+The experiment with the ideal time synchronisation shows that the found position is not very precise even then.
+
+The current problems seem to be caused by programming limitations, i.e. SVD used in both LSQ and NLSQ methods, even with small input deviations, provides results with very high errors.
+It is also possible that the math in time predictions is wrong, but it was double-checked, and many errors were fixed. 
+Another issue may be solved by expressing the time not in $[\si{dw}]$ but in other, smaller units, or improving the time synchronisation etc.
+
+As a result, two localisation methods and a time synchronisation method were proposed in this report, and everything is implemented and working in the ideal case. 
+Still, there is space for a lot of improvements.
 
 % =================================================================================
 \bibliography{main}{}
@@ -392,4 +428,3 @@ The conclusion goes here.
 \cleardoublepage
 
 \end{document}
-
