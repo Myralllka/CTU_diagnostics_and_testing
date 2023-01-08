@@ -412,7 +412,7 @@ Back to \autoref{sec:set_tasks}, step by step conclusion:
     \item Unknown object localisation - described in \autoref{sec:solution_nlsq} and \autoref{sec:solution_lsq} and implemented, but not working.
 \end{itemize}
 
-The main error seems to be with the time synchronisation because the numbers there are huge ($10e7 - 10e18$), and even the smallest error in prediction causes significant errors in the position estimation. 
+The main error seems to be with the time synchronisation because the numbers there are huge ($10e7 - 10e13$), and even the smallest error in prediction causes significant errors in the position estimation. 
 The experiment with the ideal time synchronisation shows that the found position is not very precise even then.
 
 The current problems seem to be caused by programming limitations, i.e. SVD used in both LSQ and NLSQ methods, even with small input deviations, provides results with very high errors.
