@@ -73,6 +73,17 @@ class AnchorsField:
                 res[i, j] = np.linalg.norm(self.ancs[i].coordinates_m - self.ancs[j].coordinates_m)
         self.TOF_table = np.round(res / speed)
 
+    def plot_2d(self):
+        fig = plt.figure()
+        ax = fig.add_subplot()
+        ax.scatter(self.coors[0, :], self.coors[1, :])
+        b = np.array(list(self.anchor_names.values())) + 68
+        for t in range(len(b)):
+            ax.text(self.coors[0, t] + 0.1, self.coors[1, t] + 0.1, str(b[t]))
+        ax.set_xlabel('x, [m]')
+        ax.set_ylabel('y, [m]')
+        return ax
+
     def plot(self):
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
@@ -86,7 +97,8 @@ class AnchorsField:
         # curve predict
         if idx == self.main_anc.number:
             return 0
-        x, y = self.hist_local_times[idx].get_data(), self.hist_time_corrections[idx].get_data()
+        x = copy.deepcopy(self.hist_local_times[idx].get_data())
+        y = copy.deepcopy(self.hist_time_corrections[idx].get_data())
         if np.any(x == 0):
             print("waiting for history to be full...")
             return self.l_time_corrections[idx]
@@ -96,15 +108,14 @@ class AnchorsField:
 
         predict = np.poly1d(np.polyfit(x, y, 2))
 
-        a = predict(self.hist_local_times[idx].last())
-        b = self.hist_time_corrections[idx].last()
-        if not a == b:
-            pass
-
         res = predict(t_local)
         return res
 
     def get_t_correction_1d(self, idx, t_local):
+        """
+        implementing the improvements for the time synchronisation from the report
+        """
+
         # line predict
         def getlinear(x, y):
             def inner(x1):
@@ -130,8 +141,6 @@ class AnchorsField:
         predict = getlinear(x, y)
         a = predict(self.hist_local_times[idx].last())
         b = self.hist_time_corrections[idx].last()
-        if not a == b:
-            vvvvv = 0
         res = predict(t_local)
         return res
 
@@ -144,7 +153,7 @@ class AnchorsField:
 
     def update_t_corrections(self, n_from, n_to, t_from, t_to, t_abs=0):
         """
-
+        implementing all formulas for time synchronisation from the report.
         :param t_abs:
         :param n_from: node number of a tx
         :param n_to: node number of a rx
@@ -211,27 +220,13 @@ class AnchorsField:
         # Look for x, y, z coordinates of a moving tag.
         idxs = np.array([self.anchor_names[arg] for arg in idxs])
 
-        # d = np.array(copy.deepcopy(self.prev_update))
-        # last_updates = d[idxs]
-        # if -np.inf in last_updates:
-        #     return None
-        # idd = np.argpartition(last_updates, -5)[-5:]
-        # idd = np.sort(idd)
-        # idxs = idxs[idd]
-        # t_local_noncorrected = copy.deepcopy(t_local_noncorrected[idd])
-
         # extract anchors coordinates
         x_s = self.coors[0, idxs]
         y_s = self.coors[1, idxs]
         z_s = self.coors[2, idxs]
 
-        # d = c * delta_t
         corrections = [self.get_t_correction(idxs[i], t_local_noncorrected[i]) for i in range(len(idxs))]
         t = copy.deepcopy(t_local_noncorrected) + copy.deepcopy(corrections)
-        debug = copy.deepcopy(t) - copy.deepcopy(self.TOF_table[3, idxs])
-        deb2 = abs(debug - debug[0]) < 1
-        if not deb2.all():
-            vvv = 0
         t = t.reshape(t.shape[0], 1)
         t_m = t @ np.ones(t.shape).T
         d_m = - t_m + t_m.T
@@ -257,7 +252,7 @@ class AnchorsField:
         res_coors = x.x
         bounds = np.array(bounds) * 2
         if np.any(res_coors < bounds[0]) or np.any(res_coors > bounds[1]):
-            print("wrong.")
+            # print("wrong.")
             return None
         return res_coors
 
@@ -274,25 +269,13 @@ class AnchorsField:
         # Look for x, y, z coordinates of a moving tag.
         idxs = np.array([self.anchor_names[arg] for arg in idxs])
 
-        d = np.array(copy.deepcopy(self.prev_update))
-        last_updates = d[idxs]
-        idd = np.argpartition(last_updates, -5)[-5:]
-        idd = np.sort(idd)
-        idxs = idxs[idd]
-        t_local_noncorrected = copy.deepcopy(t_local_noncorrected[idd])
-
         # extract anchors coordinates
         x_s = self.coors[0, idxs]
         y_s = self.coors[1, idxs]
         z_s = self.coors[2, idxs]
 
-        # d = c * delta_t
         corrections = [self.get_t_correction(idxs[i], t_local_noncorrected[i]) for i in range(len(idxs))]
         t = copy.deepcopy(t_local_noncorrected) + copy.deepcopy(corrections)
-        debug = t - copy.deepcopy(self.TOF_table[self.main_anc.number, idxs])
-        deb2 = (debug - debug[0]) < 1
-        if not deb2.all():
-            vvv = 0
         t = t.reshape(t.shape[0], 1)
         t_m = t @ np.ones(t.shape).T
         d_m = np.abs(t_m - t_m.T)
@@ -341,12 +324,6 @@ class AnchorsField:
         corrections = [self.get_t_correction(idxs[i], t_local_noncorrected[i]) for i in range(len(idxs))]
         t = copy.deepcopy(t_local_noncorrected) + copy.deepcopy(corrections)
 
-        # debug = t - copy.deepcopy(self.TOF_table[self.main_anc.number, idxs])
-        # d = np.abs(debug - debug[0])
-        # deb2 = d < 1
-        # if not deb2.all():
-        #     vvv = 0
-
         t = t.reshape(t.shape[0], 1)
         t_m = t @ np.ones(t.shape).T
         d_m = t_m - t_m.T
@@ -354,20 +331,15 @@ class AnchorsField:
 
         res = least_squares_fit(x_s, y_s, z_s, d_m)
 
-        if self.main_anc.number in idxs:
-            aaa = np.where(idxs == self.main_anc.number)[0][0]
-            r = res[aaa]
-        else:
-            prev = np.array(copy.deepcopy(self.prev_update))[idxs]
-            l_i = np.argmax(prev)
-            r = res[l_i]
+        r = res[np.argmin(res[:, 3])]
         r = r[:-1]
         bounds = [
-            [-16, -10, -10],
-            [4, 4, 20]
+            [-16, -10, -4],
+            [4, 4, 5]
             ]
+        bounds = np.array(bounds) * 100
         if np.any(r < bounds[0]) or np.any(r > bounds[1]):
-            print("wrong.")
+            # print("wrong.")
             return None
         if r is not None:
             return r

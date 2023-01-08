@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import copy
 from scipy import stats
 from Field2 import *
+from scipy.optimize import curve_fit
 
 
 mpl.use('Qt5Agg')
@@ -66,10 +67,10 @@ def init_field(main_N: int):
 
 if __name__ == "__main__":
 
-    # fname_syncs = "syncs_walls5.csv"
-    # fname_blinks = "blinks_walls5.csv"
-    fname_syncs = "syncs_cold_start.csv"
-    fname_blinks = "blinks_cold_start.csv"
+    fname_syncs = "syncs_walls5.csv"
+    fname_blinks = "blinks_walls5.csv"
+    # fname_syncs = "syncs_cold_start.csv"
+    # fname_blinks = "blinks_cold_start.csv"
 
     # Data preprocessing: read files
     syncs = np.genfromtxt(fname_syncs, delimiter=',', dtype=np.float64)
@@ -93,38 +94,35 @@ if __name__ == "__main__":
     syncs[:, 4] -= initial_time
     blinks[:, 3] -= initial_time
 
-    # main_anc = 76
-    # for i in range(9):
-    #     if i == 3:
-    #         pass
-    #     t71i = syncs[syncs[:, 0] == main_anc]
-    #     t71i = t71i[t71i[:, 1] == i+68]
-    #     x = t71i[:20, 4]
-    #     y = t71i[:20, 3] - t71i[:20, 2]
-    #     if x.shape[0] != 0:
-    #     #     if i not in [2, 3, 4, 5, 7]:
-    #         plt.scatter(x, y, label="error from anchor {} to {}".format(main_anc, i+68))
+    # t6874 = syncs[syncs[:, 0] == 68]
+    # t6874 = t6874[t6874[:, 1] == 74]
+    # x = t6874[800:807, 3]
+    # y = t6874[800:807, 2] - t6874[800:807, 3]
     #
+    # # plt.plot(x, y, 'r*')
+    # # plt.plot(x, predict(x), 'g.')
+    # # plt.show()
+    # predict = np.poly1d(np.polyfit(x[:3], y[:3], 1))
+    # plt.plot(y - predict(x), 'b.', label='1d polynom')
+    # predict = np.poly1d(np.polyfit(x[:3], y[:3], 2))
+    # plt.plot(y - predict(x), 'g.', label='2d polynom')
+    # plt.ylabel("The difference between real and predicted values, [dw]")
+    # plt.xlabel("68th anchor synchronisation time, [dw]")
+    # plt.title("The difference between real and predicted values, trained on 3 elements")
+    # plt.legend()
+    # plt.show()
+
     # plt.ylabel("difference between anchors local time, own units")
     # plt.xlabel("absolute time, [s]")
     # plt.legend()
     # plt.show()
 
-# if __name__ == "a":
+    # if __name__ == "a":
 
-    # new_array = np.unique(blinks[:, 3])
-    # blink_times = new_array[new_array.argsort()]
-    #
-    # new_array = np.unique(syncs[:, 4])
-    # sync_times = new_array[new_array.argsort()]
-
-    # test_anc_n = 73
+    # test_anc_n = 71
     # test_anc = syncs[syncs[:, 0] == test_anc_n]
     # syncs = syncs[syncs[:, 0] != test_anc_n]
     # syncs = syncs[syncs[:, 1] != test_anc_n]
-
-    # syncs = syncs[syncs[:, 0] != 70]
-    # syncs = syncs[syncs[:, 1] != 70]
 
     # # # # # # # # # # # # # # #
     # # # # # main part # # # # #
@@ -134,14 +132,12 @@ if __name__ == "__main__":
     i_max = syncs.shape[0]
     i_blinks = 0
     x_prev = np.array([np.mean(F.coors[0]), np.mean(F.coors[1]), np.mean(F.coors[2])])
-    # x_prev = np.array([0, 0, 0])
     res = []
     while True:
         n_active_ancs = [el is not None for el in F.l_time_corrections]
         # n_active_ancs[test_anc_n - 68] = True
         blinks_recorded = False
         if np.all(n_active_ancs):
-            # main part here
             nrx_ttxs_trxs_id_ntx = []
             # while test_anc[i_blinks, 4] < syncs[i, 4]:
             #     nrx_ttxs_trxs_id_ntx.append([test_anc[i_blinks, 1],
@@ -163,8 +159,8 @@ if __name__ == "__main__":
                 #     break
             if blinks_recorded:
                 blinks_recorded = False
-                if len(nrx_ttxs_trxs_id_ntx) < 5:
-                    print("Unable to locate the tag because at least 5 anchors are needed for that in 3D")
+                if len(nrx_ttxs_trxs_id_ntx) < 4:
+                    print("Unable to locate the tag because at least 4 anchors are needed for that in 3D")
                 else:
                     nrx_ttxs_trxs_id_ntx = np.array(nrx_ttxs_trxs_id_ntx)
                     a = np.all((nrx_ttxs_trxs_id_ntx[:, 3]) == nrx_ttxs_trxs_id_ntx[0, 3])
@@ -172,19 +168,26 @@ if __name__ == "__main__":
                     if not a:
                         print("not all messages has the same id")
                         continue
-                    if b:
-                        nrx_ttxs_trxs_id_ntx = (nrx_ttxs_trxs_id_ntx[nrx_ttxs_trxs_id_ntx[:, 0].argsort()])
-                        l_x = F.locate_tag_lq(nrx_ttxs_trxs_id_ntx[:, 0],
-                                                        nrx_ttxs_trxs_id_ntx[:, 2],
-                                                        x_prev, c_dw,
-                                                        nrx_ttxs_trxs_id_ntx[:, 1])
-                        if l_x is not None:
-                            # x_prev = l_x
-                            res.append([l_x[0], l_x[1], l_x[2], nrx_ttxs_trxs_id_ntx[0][4]])
-                    else:
-                        print("time stamps of msg sent by tag are different: ignoring...")
-        if i_blinks >= 2000:
-            break
+                    if not b:
+                        unique_tstpts = list(set(nrx_ttxs_trxs_id_ntx[:, 1]))
+                        ns = []
+                        for element in unique_tstpts:
+                            n = np.count_nonzero(nrx_ttxs_trxs_id_ntx[:, 1] == element)
+                            ns.append(n)
+                        ns = np.array(ns)
+                        ns = np.argmax(ns)
+                        major_time = unique_tstpts[ns]
+                        nrx_ttxs_trxs_id_ntx = nrx_ttxs_trxs_id_ntx[nrx_ttxs_trxs_id_ntx[:, 1] == major_time, :]
+                    nrx_ttxs_trxs_id_ntx = (nrx_ttxs_trxs_id_ntx[nrx_ttxs_trxs_id_ntx[:, 0].argsort()])
+
+                    l_x = F.locate_tag_lq(nrx_ttxs_trxs_id_ntx[:, 0],
+                                          nrx_ttxs_trxs_id_ntx[:, 2],
+                                          x_prev, c_dw,
+                                          nrx_ttxs_trxs_id_ntx[:, 1])
+                    if l_x is not None:
+                        # print(i)
+                        x_prev = l_x
+                        res.append([l_x[0], l_x[1], l_x[2], nrx_ttxs_trxs_id_ntx[0][4]])
         # # # # # # # #
         # general part
         F.update_t_corrections(syncs[i, 0], syncs[i, 1], syncs[i, 2], syncs[i, 3], syncs[i, 4])
@@ -192,7 +195,8 @@ if __name__ == "__main__":
         # if i >= i_max or (i_blinks >= test_anc.shape[0]):
         if i >= i_max or (i_blinks >= blinks.shape[0]):
             break
-    ax = F.plot()
+
+    ax = F.plot_2d()
     res = np.array(res).T
     if res.size == 0:
         print("nothing happened: anchors were not synchronized")
@@ -200,5 +204,22 @@ if __name__ == "__main__":
         # res1 = res[0:3, res[-1] == test_anc_n]
         res1 = res[:, res[-1] == 30]
         print(res1.shape)
-        ax.scatter(res1[0, :], res1[1, :], res1[2, :], 'yo')
+        # ax.scatter(res1[0, :], res1[1, :], res1[2, :], 'yo')
+
+        # compute the absolute mean error
+        s = 0
+        # for each in res1.T:
+        #     a = F.coors[:, test_anc_n - 68]
+        #     b = each
+        #     assert a.shape == b.shape, "wrong dims"
+        #     s += np.linalg.norm(each - F.coors[:, test_anc_n - 68])
+        # s = s / res1.shape[1]
+
+        ax.scatter(res1[0, :], res1[1, :], color='y', alpha=0.3)
+        plt.gca().set_aspect('equal')
+        # plt.title("{} anchor localisation with {} anchor as main. MAE={:.2f}[m]".format(test_anc_n,
+        # F.main_anc.number + 68, s))
+        plt.title("tag number {} localisation with {} anchor as main.".format(30, F.main_anc.number + 68))
+        plt.xlabel("x axis, [m]")
+        plt.ylabel("y axis, [m]")
         plt.show()
